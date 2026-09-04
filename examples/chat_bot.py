@@ -58,8 +58,11 @@ def on_device_code(data):
 
 auth_token = authentication.MicrosoftAuthenticationToken()
 try:
+    # 'fetch_certificates' obtains the chat-signing key pair, allowing
+    # chat on servers running with 'enforce-secure-chat=true'.
     auth_token.authenticate(USERNAME, cache_dir=CACHE_DIR,
-                            on_device_code=on_device_code)
+                            on_device_code=on_device_code,
+                            fetch_certificates=True)
 except YggdrasilError as error:
     print(error)
     sys.exit(1)
@@ -308,6 +311,12 @@ while True:
     elif text == "/quit":
         print("Bye!")
         sys.exit()
+    elif text.startswith("/") and \
+            connection.context.protocol_later_eq(759):
+        # Protocols 759+ (1.19+) use a dedicated command packet.
+        packet = serverbound.play.ChatCommandPacket()
+        packet.command = text[1:]
+        connection.write_packet(packet)
     elif text:
         packet = serverbound.play.ChatPacket()
         packet.message = text

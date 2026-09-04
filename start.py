@@ -84,7 +84,10 @@ def main():
         # afterwards cached tokens are reused automatically.
         auth_token = authentication.MicrosoftAuthenticationToken()
         try:
-            auth_token.authenticate(options.username)
+            # 'fetch_certificates' obtains the chat-signing key pair,
+            # allowing chat on servers with 'enforce-secure-chat=true'.
+            auth_token.authenticate(options.username,
+                                    fetch_certificates=True)
         except YggdrasilError as e:
             print(e)
             sys.exit()
@@ -133,6 +136,12 @@ def main():
                 print("respawning...")
                 packet = serverbound.play.ClientStatusPacket()
                 packet.action_id = serverbound.play.ClientStatusPacket.RESPAWN
+                connection.write_packet(packet)
+            elif text.startswith("/") and \
+                    connection.context.protocol_later_eq(759):
+                # Protocols 759+ (1.19+) use a dedicated command packet.
+                packet = serverbound.play.ChatCommandPacket()
+                packet.command = text[1:]
                 connection.write_packet(packet)
             else:
                 packet = serverbound.play.ChatPacket()

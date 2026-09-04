@@ -32,13 +32,18 @@ def get_packets(context):
         packets |= {
             TeleportConfirmPacket,
         }
+    if context.protocol_later_eq(759):
+        packets |= {
+            ChatCommandPacket,
+        }
+    if context.protocol_later_eq(761):
+        packets |= {
+            PlayerSessionPacket,
+            ChatAcknowledgementPacket,
+        }
     if context.protocol_later_eq(764):
         packets |= {
             ConfigurationAcknowledgedPacket,
-        }
-    if context.protocol_later_eq(766):
-        packets |= {
-            ChatCommandPacket,
         }
     return packets
 
@@ -186,18 +191,148 @@ class ChatPacket(Packet):
                     packet_buffer)
 
 
+class PlayerSessionPacket(Packet):
+    # Note: added in protocol 761; registers the player's chat-signing
+    # public key with the server for the duration of a chat session.
+    # Sent once after entering the play state when chat signing is
+    # available (see 'minecraft.networking.chat_signing').
+    @staticmethod
+    def get_id(context):
+        return 0x09 if context.protocol_later_eq(771) else \
+               0x08 if context.protocol_later_eq(768) else \
+               0x07 if context.protocol_later_eq(766) else \
+               0x06 if context.protocol_later_eq(762) else \
+               0x20
+
+    packet_name = "player session"
+    definition = [
+        {'session_uuid': UUID},
+        {'expires_at': Long},
+        {'public_key': VarIntPrefixedByteArray},
+        {'key_signature': VarIntPrefixedByteArray}]
+
+
+class ChatAcknowledgementPacket(Packet):
+    # Note: added in protocol 761; acknowledges received player chat
+    # messages without sending a chat message.
+    @staticmethod
+    def get_id(context):
+        return 0x05 if context.protocol_later_eq(771) else \
+               0x04 if context.protocol_later_eq(768) else \
+               0x03
+
+    packet_name = "chat acknowledgement"
+    definition = [
+        {'count': VarInt}]
+
+
 class ChatCommandPacket(Packet):
-    # Note: pyCraft supports this packet only in protocols 766 and later,
-    # in which it carries no signature data.
+    # Note: added in protocol 759; carries a command typed by the player
+    # (without the leading '/'). pyCraft always sends commands without
+    # argument signatures: signing arguments requires parsing the
+    # server-provided command tree, which pyCraft does not implement.
+    # Servers execute such commands normally; chat-content arguments of
+    # commands like '/msg' are simply not marked as signed.
     @staticmethod
     def get_id(context):
         return 0x06 if context.protocol_later_eq(771) else \
                0x05 if context.protocol_later_eq(768) else \
-               0x04
+               0x04 if context.protocol_later_eq(760) else \
+               0x03
 
     packet_name = "chat command"
-    definition = [
-        {'command': String}]
+
+    # Default values of the fields present before protocol 766, so that an
+    # unsigned command may be sent by setting only 'command'.
+    timestamp = 0
+    salt = 0
+    argument_signatures = ()
+    signed_preview = False
+    previous_messages = ()
+    last_rejected_message = None
+    offset = 0
+    acknowledged = b'\x00\x00\x00'
+
+    class ArgumentSignature(MutableRecord):
+        __slots__ = 'argument_name', 'signature'
+
+    class PreviousMessage(MutableRecord):
+        __slots__ = 'message_sender', 'message_signature'
+
+    def read(self, file_object):
+        context = self.context
+        self.command = String.read(file_object)
+        if context.protocol_later_eq(766):
+            return
+        self.timestamp = Long.read(file_object)
+        self.salt = Long.read(file_object)
+        self.argument_signatures = []
+        for i in range(VarInt.read(file_object)):
+            argument_name = String.read(file_object)
+            if context.protocol_later_eq(761):
+                signature = file_object.read(256)
+            else:
+                signature = VarIntPrefixedByteArray.read(file_object)
+            self.argument_signatures.append(
+                ChatCommandPacket.ArgumentSignature(
+                    argument_name=argument_name, signature=signature))
+        if context.protocol_later_eq(761):
+            self.offset = VarInt.read(file_object)
+            self.acknowledged = file_object.read(3)
+            return
+        self.signed_preview = Boolean.read(file_object)
+        if context.protocol_later_eq(760):
+            self.previous_messages = []
+            for i in range(VarInt.read(file_object)):
+                self.previous_messages.append(
+                    ChatCommandPacket.PreviousMessage(
+                        message_sender=UUID.read(file_object),
+                        message_signature=VarIntPrefixedByteArray.read(
+                            file_object)))
+            if Boolean.read(file_object):
+                self.last_rejected_message = \
+                    ChatCommandPacket.PreviousMessage(
+                        message_sender=UUID.read(file_object),
+                        message_signature=VarIntPrefixedByteArray.read(
+                            file_object))
+            else:
+                self.last_rejected_message = None
+
+    def write_fields(self, packet_buffer):
+        context = self.context
+        String.send(self.command, packet_buffer)
+        if context.protocol_later_eq(766):
+            return
+        Long.send(self.timestamp, packet_buffer)
+        Long.send(self.salt, packet_buffer)
+        VarInt.send(len(self.argument_signatures), packet_buffer)
+        for argument in self.argument_signatures:
+            String.send(argument.argument_name, packet_buffer)
+            if context.protocol_later_eq(761):
+                packet_buffer.send(argument.signature)
+            else:
+                VarIntPrefixedByteArray.send(
+                    argument.signature, packet_buffer)
+        if context.protocol_later_eq(761):
+            VarInt.send(self.offset, packet_buffer)
+            packet_buffer.send(self.acknowledged)
+            return
+        Boolean.send(self.signed_preview, packet_buffer)
+        if context.protocol_later_eq(760):
+            VarInt.send(len(self.previous_messages), packet_buffer)
+            for message in self.previous_messages:
+                UUID.send(message.message_sender, packet_buffer)
+                VarIntPrefixedByteArray.send(
+                    message.message_signature, packet_buffer)
+            Boolean.send(self.last_rejected_message is not None,
+                         packet_buffer)
+            if self.last_rejected_message is not None:
+                UUID.send(
+                    self.last_rejected_message.message_sender,
+                    packet_buffer)
+                VarIntPrefixedByteArray.send(
+                    self.last_rejected_message.message_signature,
+                    packet_buffer)
 
 
 class ConfigurationAcknowledgedPacket(Packet):

@@ -7,13 +7,15 @@ import timeit
 import select
 import sys
 import json
+import os
 import re
+import struct
 
 from .types import VarInt
 from .packets import clientbound, serverbound
 from .packets.clientbound import configuration as clientbound_configuration
 from .packets.serverbound import configuration as serverbound_configuration
-from . import packets, encryption
+from . import packets, encryption, chat_signing
 from .. import (
     utility, KNOWN_MINECRAFT_VERSIONS, SUPPORTED_MINECRAFT_VERSIONS,
     SUPPORTED_PROTOCOL_VERSIONS, PROTOCOL_VERSION_INDICES
@@ -177,6 +179,20 @@ class Connection(object):
         self.username = username
         self.connected = False
 
+        # Chat signing (protocols 759+): available when the auth token
+        # carries chat-signing certificates. See 'chat_signing.py'.
+        self.profile_key = None
+        self.chat_signer = None
+        self._encryption_enabled = False
+        certificates = getattr(auth_token, 'certificates', None)
+        if certificates:
+            try:
+                self.profile_key = chat_signing.ProfileKey \
+                    .from_certificates(certificates)
+            except (KeyError, TypeError, ValueError):
+                # Malformed certificate data: fall back to unsigned chat.
+                self.profile_key = None
+
         self.handle_exception = handle_exception
         self.exception, self.exc_info = None, None
         self.handle_exit = handle_exit
@@ -215,6 +231,11 @@ class Connection(object):
         :param force(bool): Specifies if the packet write should be immediate
         """
         packet.context = self.context
+        if self.chat_signer is not None:
+            if isinstance(packet, serverbound.play.ChatPacket):
+                self.chat_signer.sign_chat_packet(self.context, packet)
+            elif isinstance(packet, serverbound.play.ChatCommandPacket):
+                self.chat_signer.prepare_command_packet(self.context, packet)
         if force:
             with self._write_lock:
                 self._write_packet(packet)
@@ -401,6 +422,12 @@ class Connection(object):
 
             self.spawned = False
             self._connect()
+            if self.profile_key is not None \
+                    and not self.profile_key.is_expired():
+                self.chat_signer = chat_signing.ChatSigner(
+                    self.profile_key, self.auth_token.profile.id_)
+            else:
+                self.chat_signer = None
             if len(self.allowed_proto_versions) == 1:
                 # There is exactly one allowed protocol version, so skip the
                 # process of determining the server's version, and immediately
@@ -411,6 +438,11 @@ class Connection(object):
                     login_start_packet.name = self.auth_token.profile.name
                 else:
                     login_start_packet.name = self.username
+                if self.chat_signer is not None:
+                    # Protocols 759 and 760 register the profile public key
+                    # in the login start packet; protocols 761 and later
+                    # use the 'player session' packet instead.
+                    login_start_packet.profile_key = self.profile_key
                 self.write_packet(login_start_packet)
                 self.reactor = LoginReactor(self)
             else:
@@ -731,6 +763,7 @@ class LoginReactor(PacketReactor):
 
     def react(self, packet):
         if packet.packet_name == "encryption request":
+            context = self.connection.context
 
             secret = encryption.generate_shared_secret()
             token, encrypted_secret = encryption.encrypt_token_and_secret(
@@ -745,7 +778,20 @@ class LoginReactor(PacketReactor):
 
             encryption_response = serverbound.login.EncryptionResponsePacket()
             encryption_response.shared_secret = encrypted_secret
-            encryption_response.verify_token = token
+            profile_key = self.connection.profile_key
+            if profile_key is not None and not profile_key.is_expired() \
+                    and context.protocol_in_range(759, 761):
+                # In protocols 759 and 760, a client with a profile key
+                # proves ownership of the key by signing the server's
+                # (unencrypted) verify token with a random salt, instead
+                # of echoing the encrypted token back.
+                salt = int.from_bytes(os.urandom(8), 'big', signed=True)
+                encryption_response.verify_token = None
+                encryption_response.salt = salt
+                encryption_response.message_signature = profile_key.sign(
+                    packet.verify_token + struct.pack('>q', salt))
+            else:
+                encryption_response.verify_token = token
 
             # Forced because we'll have encrypted the connection by the time
             # it reaches the outgoing queue
@@ -760,6 +806,7 @@ class LoginReactor(PacketReactor):
             self.connection.file_object = \
                 encryption.EncryptedFileObjectWrapper(
                     self.connection.file_object, decryptor)
+            self.connection._encryption_enabled = True
 
         elif packet.packet_name == "disconnect":
             # Receiving a disconnect packet in the login state indicates an
@@ -847,6 +894,40 @@ class PlayingReactor(PacketReactor):
         if packet.packet_name == "set compression":
             self.connection.options.compression_threshold = packet.threshold
             self.connection.options.compression_enabled = True
+
+        elif packet.packet_name == "join game":
+            signer = self.connection.chat_signer
+            if signer is not None:
+                context = self.connection.context
+                signer.begin_play(context)
+                if context.protocol_later_eq(761) \
+                        and self.connection._encryption_enabled \
+                        and signer.session is None:
+                    # Protocols 761 and later register the profile public
+                    # key at the start of the play state (for protocols
+                    # 759 and 760 this happens in the login state).
+                    session = signer.start_session()
+                    profile_key = signer.profile_key
+                    session_packet = serverbound.play.PlayerSessionPacket()
+                    session_packet.session_uuid = str(session.uuid)
+                    session_packet.expires_at = profile_key.expires_at_ms
+                    session_packet.public_key = profile_key.public_key_der
+                    session_packet.key_signature = profile_key.signature_v2
+                    self.connection.write_packet(session_packet)
+
+        elif packet.packet_name == "player chat message":
+            signer = self.connection.chat_signer
+            if signer is not None:
+                pending = signer.observe_player_chat(
+                    getattr(packet, 'sender_uuid', None),
+                    getattr(packet, 'signature', None))
+                if pending:
+                    # Protocols 761 and later: acknowledge a backlog of
+                    # received player chat messages.
+                    ack_packet = \
+                        serverbound.play.ChatAcknowledgementPacket()
+                    ack_packet.count = pending
+                    self.connection.write_packet(ack_packet)
 
         elif packet.packet_name == "keep alive":
             keep_alive_packet = serverbound.play.KeepAlivePacket()

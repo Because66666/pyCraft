@@ -91,5 +91,8 @@ credentials
 minecraft-data-master/
 node-minecraft-protocol-master/
 prismarine-auth-master/
+
+## 过程文件
+.mcdata_scratch/
 test.py
 启动.bat

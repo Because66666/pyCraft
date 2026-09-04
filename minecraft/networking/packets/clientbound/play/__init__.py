@@ -54,16 +54,16 @@ def get_packets(context):
             ChatMessagePacket,
         }
     else:
+        # In protocol 767, the 'type' field of the 'player chat message'
+        # and 'profileless chat message' packets became a registry entry
+        # holder; pyCraft only supports the registry-reference form (a
+        # bare VarInt), which is what vanilla servers send.
         packets |= {
             SystemChatPacket,
+            PlayerChatPacket,
         }
         if context.protocol_later_eq(761):
-            # In protocol 767, the 'type' field of the 'player chat message'
-            # and 'profileless chat message' packets became a registry entry
-            # holder; pyCraft only supports the registry-reference form (a
-            # bare VarInt), which is what vanilla servers send.
             packets |= {
-                PlayerChatPacket,
                 ProfilelessChatPacket,
             }
 

@@ -72,8 +72,22 @@ class LoginStartPacket(Packet):
     def write_fields(self, packet_buffer):
         String.send(self.name, packet_buffer)
         if self.context.protocol_in_range(759, 761):
-            # pyCraft never sends profile public-key signature data.
-            Boolean.send(False, packet_buffer)
+            # Profile public-key signature data, sent when chat signing
+            # is available (see 'minecraft.networking.chat_signing').
+            profile_key = getattr(self, 'profile_key', None)
+            Boolean.send(profile_key is not None, packet_buffer)
+            if profile_key is not None:
+                Long.send(profile_key.expires_at_ms, packet_buffer)
+                VarIntPrefixedByteArray.send(
+                    profile_key.public_key_der, packet_buffer)
+                # Protocol 760 covers both 1.19.1 (which expects the V1
+                # signature) and 1.19.2 (V2); the two cannot be told apart
+                # by protocol number, and 1.19.2 is by far the more common.
+                if self.context.protocol_earlier(760):
+                    signature = profile_key.signature_v1
+                else:
+                    signature = profile_key.signature_v2
+                VarIntPrefixedByteArray.send(signature, packet_buffer)
         if self.context.protocol_later_eq(764):
             # In protocol 764 and later, the player UUID is mandatory.
             player_uuid = getattr(self, 'player_uuid', None)

@@ -6,6 +6,12 @@ Minecraft Python 客户端库！
 
 开发者详细信息请参阅：`<http://pycraft.readthedocs.org/en/latest/>`
 
+Because66666 接手该项目后，通过参考开源库
+- [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data)
+- [PrismarineJS/node-minecraft-protocol](https://github.com/PrismarineJS/node-minecraft-protocol)
+- [PrismarineJS/prismarine-auth](https://github.com/PrismarineJS/prismarine-auth)
+使用Kimi-K3模型完成原代码仓库的协议升级。
+
 `start.py` 是一个使用该库的无头客户端（headless client）基础示例，使用 `start.py --help` 查看选项。
 
 详细的使用教程与示例请参见：[教程示例](TUTORIAL.md)。
@@ -36,7 +42,7 @@ pyCraft 兼容以下 Minecraft 正式版本：
 
 虽然 pyCraft 可以兼容任何受支持的服务器，但目前库中仅实现了解码/编码全部数据包中的一个子集：保持服务器连接所必需的数据包、用于聊天的数据包，以及其他一些数据包。
 
-请注意，pyCraft 不实现聊天消息签名（Minecraft 1.19 引入）：聊天消息始终以未签名方式发送。这在离线模式（offline-mode）服务器和不强制安全聊天的服务器上可以正常工作，但设置了 `enforce-secure-chat=true` 的服务器可能会拒绝或踢出该客户端。
+请注意，聊天消息签名（Minecraft 1.19 引入）已支持：当认证令牌带有聊天签名证书时（`MicrosoftAuthenticationToken` 在 `authenticate()` 时传入 `fetch_certificates=True`），发出的聊天消息会自动签名，因此设置了 `enforce-secure-chat=true` 的服务器也能正常聊天。未获取证书时，聊天消息仍以未签名方式发送，适用于离线模式（offline-mode）服务器和不强制安全聊天的服务器。
 
 希望使用其他功能的开发者可以通过以下方式贡献代码：为所需的数据包实现数据包类，将它们添加到 `minecraft/networking/packets` 目录下，并提交 Pull Request。
 
@@ -64,7 +70,7 @@ cryptography 库的安装说明请参阅：`<https://cryptography.io/en/latest/i
 
 ## 联系方式
 
-本项目目前有两位主要开发者：*Ammar Askar* 和 *Jeppe Klitgaard*。
+本项目目前由 **Because66666** 进行维护，继承项目：[ammaraskar/pyCraft](https://github.com/ammaraskar/pycraft)。
 
 ### GitHub
 
@@ -74,9 +80,4 @@ cryptography 库的安装说明请参阅：`<https://cryptography.io/en/latest/i
 
 可以通过邮件联系我们：
 
-* Ammar Askar <ammar@ammaraskar.com>
-* Jeppe Klitgaard <jeppe@dapj.dk>
-
-### IRC
-
-我们经常出没于 `irc.esper.net` 上的 `minecraftdev` IRC 频道，使用的昵称是 `ammar2` 和 `dkkline`。
+* Because66666 <z66666z@163.com>

@@ -16,9 +16,7 @@ pyCraft 对协议的实现策略是"按需实现"：只注册保持连接、聊�
 
 | 包类 | 模块 | 功能 | 不支持的协议 | 原因 |
 |---|---|---|---|---|
-| `ChatMessagePacket` | `minecraft/networking/packets/clientbound/play/__init__.py` | 旧版聊天广播（JSON 文本 + 位置 + 发送者） | 759+（MC 1.19+） | **官方移除**：拆分为 system chat 与 player chat。pyCraft 已支持 `SystemChatPacket` |
-| `PlayerChatPacket` | 同上 | 带签名的玩家聊天消息 | 767+（MC 1.21+） | **实现封顶**：`type` 字段变为 registry entry holder（`ChatTypesHolder`）。已支持 759–766 |
-| `ProfilelessChatPacket` | 同上 | 无签名玩家聊天（插件/代理服务器用） | 767+（MC 1.21+） | **实现封顶**：同上。已支持 761–766 |
+| `ChatMessagePacket` | `minecraft/networking/packets/clientbound/play/__init__.py` | 旧版聊天广播（JSON 文本 + 位置 + 发送者） | 759+（MC 1.19+） | **官方移除**：拆分为 system chat 与 player chat。pyCraft 已支持 `SystemChatPacket` / `PlayerChatPacket` / `ProfilelessChatPacket` |
 | `SpawnPlayerPacket` | 同上（`__init__.py:499`） | 生成玩家实体 | 764+（MC 1.20.2+） | **官方移除**：并入 spawn_entity |
 | `NamedSoundEffectPacket` | `clientbound/play/sound_effect_packet.py` | 按名称播放声音 | 761+（MC 1.19.3+） | **官方移除**：并入 `SoundEffectPacket` 的 holder 内联形式（已支持） |
 | `ResourcePackSendPacket` | `clientbound/play/__init__.py:792` | 下发资源包 | 765+（MC 1.20.3+） | **官方重构**：拆分为 add_resource_pack / remove_resource_pack |
@@ -28,6 +26,10 @@ pyCraft 对协议的实现策略是"按需实现"：只注册保持连接、聊�
 
 ## 补充说明
 
+- **聊天消息已全版本覆盖**：`ChatMessagePacket`（≤758）、`SystemChatPacket`（759+）、
+  `PlayerChatPacket`（759+）、`ProfilelessChatPacket`（761+，插件/代理服务器的
+  无签名玩家聊天）均已注册到协议 774。767+ 的 `type` 字段为 registry entry
+  holder，pyCraft 按原版服务器实际发送的 registry-reference 形式（裸 VarInt）解析。
 - **Serverbound（上行）方向无任何封顶**：keep alive、chat（含 ≥770 的
   checksum 字段）、chat command、client settings/information、
   teleport confirm、plugin message、configuration acknowledged 等全部

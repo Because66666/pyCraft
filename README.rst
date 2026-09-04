@@ -49,10 +49,13 @@ Although pyCraft is compatible any supported server, only a subset of all
 packets are currently decoded or encoded by the library: those necessary
 to remain connected to the server, those used for chat, and some others.
 
-Note that pyCraft does not implement chat message signing (introduced in
-Minecraft 1.19): chat messages are always sent unsigned. This works on
-offline-mode servers and servers that do not enforce secure chat, but
-servers with ``enforce-secure-chat=true`` may reject or kick the client.
+Chat message signing (introduced in Minecraft 1.19) is supported: when
+the authentication token carries chat-signing certificates (for
+``MicrosoftAuthenticationToken``, pass ``fetch_certificates=True`` to
+``authenticate``), outgoing chat messages are signed automatically, so
+servers with ``enforce-secure-chat=true`` accept them. Without
+certificates, chat messages are sent unsigned, which works on
+offline-mode servers and servers that do not enforce secure chat.
 
 Developers wishing to use other functionality with pyCraft can contribute by
 implementing packet classes for the desired packets, adding them under

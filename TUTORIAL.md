@@ -106,6 +106,9 @@ auth_token.authenticate("你的微软账号邮箱", on_device_code=on_device_cod
 
 如果需要 Minecraft 1.19+ 的聊天签名密钥，可以传入
 `fetch_certificates=True`，结果保存在 `auth_token.certificates` 中。
+带有证书的连接会自动为聊天消息签名（包括登录时的密钥上报与会话注册），
+因此可以在 `enforce-secure-chat=true` 的服务器上聊天；没有证书时消息
+以未签名方式发送。
 
 > **注意**：切勿在日志或代码仓库中记录、提交访问令牌；缓存目录中的
 > JSON 文件包含访问令牌和刷新令牌，同样不得提交。
@@ -163,11 +166,20 @@ packet = serverbound.play.ChatPacket()
 packet.message = "大家好！"
 connection.write_packet(packet)
 
+# 发送服务器命令（1.19+ 使用专用命令包，内容为不带 '/' 的命令文本）
+packet = serverbound.play.ChatCommandPacket()
+packet.command = "help"
+connection.write_packet(packet)
+
 # 重生
 packet = serverbound.play.ClientStatusPacket()
 packet.action_id = serverbound.play.ClientStatusPacket.RESPAWN
 connection.write_packet(packet)
 ```
+
+在 1.19（协议 759）之前，命令也可以直接作为聊天消息发送（以 `/` 开头）；
+1.19 及以后必须使用 `ChatCommandPacket`。聊天消息与命令包的时间戳、
+签名、确认等字段由连接自动填充，无需手动设置。
 
 ## 完整示例：一个简单的聊天机器人
 
