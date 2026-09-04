@@ -1,7 +1,9 @@
 import requests
 import json
 import uuid
+import os
 from .exceptions import YggdrasilError
+from .microsoft import MicrosoftAuthFlow, Titles
 
 #: The base url for Ygdrassil requests
 AUTH_SERVER = "https://authserver.mojang.com"
@@ -253,6 +255,134 @@ class AuthenticationToken(object):
         """
         if not self.authenticated:
             err = "AuthenticationToken hasn't been authenticated yet!"
+            raise YggdrasilError(err)
+
+        res = _make_request(SESSION_SERVER, "join",
+                            {"accessToken": self.access_token,
+                             "selectedProfile": self.profile.to_dict(),
+                             "serverId": server_id})
+
+        if res.status_code != 204:
+            _raise_from_response(res)
+        return True
+
+
+class MicrosoftAuthenticationToken(object):
+    """
+    Represents a Minecraft: Java Edition token obtained through
+    Microsoft's OAuth 2.0 device-code flow (no password involved),
+    mirroring the behaviour of node-minecraft-protocol's
+    ``src/client/microsoftAuth.js``.
+
+    Tokens are cached on disk so that subsequent runs usually need no
+    user interaction. The token can be passed to
+    :class:`minecraft.networking.Connection` as ``auth_token`` just
+    like an :class:`AuthenticationToken`.
+    """
+
+    def __init__(self, username=None):
+        """
+        Parameters:
+            username - The Microsoft account's username/email. Only
+                used to name the token cache files; may be empty.
+        """
+        self.username = username
+        self.access_token = None
+        self.profile = Profile()
+        self.certificates = None
+        self.auth_flow = None
+
+    @property
+    def authenticated(self):
+        """
+        Attribute which is ``True`` when the token is authenticated and
+        ``False`` when it isn't.
+        """
+        if not self.access_token:
+            return False
+
+        if not self.profile:
+            return False
+
+        return True
+
+    def authenticate(self, username="", cache_dir=None, auth_title=None,
+                     on_device_code=None, fetch_certificates=False):
+        """
+        Authenticates with a Microsoft account using the OAuth 2.0
+        device-code flow. No password is given; when no usable cached
+        tokens exist, a device code is requested and reported through
+        ``on_device_code`` (the user must open the shown URL in a
+        browser and enter the code). Afterwards, cached tokens are
+        reused and refreshed automatically.
+
+        Parameters:
+            username - The Microsoft account's username/email. Only
+                used to name the cache files; may be empty.
+            cache_dir - Directory where the token cache files are
+                stored. Defaults to ``~/.minecraft/nmp-cache`` (the
+                same default as node-minecraft-protocol).
+            auth_title - The OAuth client id to authenticate as.
+                Defaults to ``Titles.MinecraftNintendoSwitch``.
+            on_device_code - Callback receiving a dict with the keys
+                ``verification_uri``, ``user_code`` and ``message``
+                when user interaction is required. By default the
+                message is printed.
+            fetch_certificates - When ``True``, also fetch the
+                chat-signing key pair used by Minecraft 1.19+ into
+                ``self.certificates``.
+
+        Returns:
+            Returns ``True`` if successful.
+
+        Raises:
+            minecraft.exceptions.YggdrasilError
+        """
+        if cache_dir is None:
+            cache_dir = os.path.join(os.path.expanduser("~"),
+                                     ".minecraft", "nmp-cache")
+        if auth_title is None:
+            auth_title = Titles.MinecraftJava
+
+        options = {"flow": "live", "auth_title": auth_title,
+                   "device_type": "Nintendo"}
+        self.auth_flow = MicrosoftAuthFlow(username, cache_dir, options,
+                                           on_device_code)
+
+        response = self.auth_flow.get_minecraft_java_token(
+            fetch_profile=True, fetch_certificates=fetch_certificates)
+
+        profile = response.get("profile")
+        if not profile or profile.get("error"):
+            raise YggdrasilError(
+                "Failed to obtain profile data for {0}, does the "
+                "account own minecraft?".format(username))
+
+        self.username = profile["name"]
+        self.access_token = response["token"]
+        self.profile.id_ = profile["id"]
+        self.profile.name = profile["name"]
+        self.certificates = response.get("certificates")
+
+        return True
+
+    def join(self, server_id):
+        """
+        Informs the Mojang session-server that we're joining the
+        MineCraft server with id ``server_id``.
+
+        Parameters:
+            server_id - ``str`` with the server id
+
+        Returns:
+            ``True`` if no errors occured
+
+        Raises:
+            :class:`minecraft.exceptions.YggdrasilError`
+        """
+        if not self.authenticated:
+            err = "MicrosoftAuthenticationToken hasn't been " \
+                  "authenticated yet!"
             raise YggdrasilError(err)
 
         res = _make_request(SESSION_SERVER, "join",

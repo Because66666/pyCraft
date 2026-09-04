@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import getpass
 import sys
 import re
 from optparse import OptionParser
@@ -15,10 +14,15 @@ def get_options():
     parser = OptionParser()
 
     parser.add_option("-u", "--username", dest="username", default=None,
-                      help="username to log in with")
+                      help="username to log in with (Microsoft account "
+                           "email in online mode, player name in "
+                           "offline mode)")
 
     parser.add_option("-p", "--password", dest="password", default=None,
-                      help="password to log in with")
+                      help="password to log in with a legacy Mojang "
+                           "account (deprecated; by default online mode "
+                           "uses Microsoft device-code sign-in, which "
+                           "does not need a password)")
 
     parser.add_option("-s", "--server", dest="server", default=None,
                       help="server host or host:port "
@@ -26,7 +30,7 @@ def get_options():
 
     parser.add_option("-o", "--offline", dest="offline", action="store_true",
                       help="connect to a server in offline mode "
-                           "(no password required)")
+                           "(no account required)")
 
     parser.add_option("-d", "--dump-packets", dest="dump_packets",
                       action="store_true",
@@ -40,11 +44,6 @@ def get_options():
 
     if not options.username:
         options.username = input("Enter your username: ")
-
-    if not options.password and not options.offline:
-        options.password = getpass.getpass("Enter your password (leave "
-                                           "blank for offline mode): ")
-        options.offline = options.offline or (options.password == "")
 
     if not options.server:
         options.server = input("Enter server host or host:port "
@@ -67,10 +66,25 @@ def main():
         print("Connecting in offline mode...")
         connection = Connection(
             options.address, options.port, username=options.username)
-    else:
+    elif options.password:
+        # Legacy Mojang/Yggdrasil login. Note that Mojang has shut down
+        # these authentication servers; kept for custom implementations.
         auth_token = authentication.AuthenticationToken()
         try:
             auth_token.authenticate(options.username, options.password)
+        except YggdrasilError as e:
+            print(e)
+            sys.exit()
+        print("Logged in as %s..." % auth_token.username)
+        connection = Connection(
+            options.address, options.port, auth_token=auth_token)
+    else:
+        # Microsoft account sign-in via the OAuth 2.0 device-code flow.
+        # The device code is printed when interaction is required;
+        # afterwards cached tokens are reused automatically.
+        auth_token = authentication.MicrosoftAuthenticationToken()
+        try:
+            auth_token.authenticate(options.username)
         except YggdrasilError as e:
             print(e)
             sys.exit()

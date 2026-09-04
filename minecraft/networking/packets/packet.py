@@ -39,6 +39,8 @@ class Packet(object):
 
     @overridable_property
     def definition(self):
+        if self is None:
+            return None
         return None if self.context is None else \
                self.get_definition(self.context)
 

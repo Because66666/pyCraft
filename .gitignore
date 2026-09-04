@@ -90,3 +90,6 @@ credentials
 ## 上游模仿复刻的协议库
 minecraft-data-master/
 node-minecraft-protocol-master/
+prismarine-auth-master/
+test.py
+启动.bat

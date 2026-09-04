@@ -57,19 +57,13 @@ def get_packets(context):
         packets |= {
             SystemChatPacket,
         }
-        if context.protocol_earlier(767):
+        if context.protocol_later_eq(761):
             # In protocol 767, the 'type' field of the 'player chat message'
-            # packet became a registry entry holder, which pyCraft does not
-            # currently support; the packet is not registered for protocols
-            # 767 and later.
+            # and 'profileless chat message' packets became a registry entry
+            # holder; pyCraft only supports the registry-reference form (a
+            # bare VarInt), which is what vanilla servers send.
             packets |= {
                 PlayerChatPacket,
-            }
-        if context.protocol_in_range(761, 767):
-            # In protocol 767, the 'type' field of the 'profileless chat
-            # message' packet became a registry entry holder, which pyCraft
-            # does not currently support.
-            packets |= {
                 ProfilelessChatPacket,
             }
 
@@ -252,12 +246,17 @@ class SystemChatPacket(Packet):
 
 class PlayerChatPacket(Packet):
     # Note: added in protocol 759, replacing 'ChatMessagePacket'. In
-    # protocol 767, the 'type' field became a registry entry holder, which
-    # pyCraft does not currently support, so this packet is not registered
-    # for protocols 767 and later (see 'get_packets').
+    # protocol 767, the 'type' field became a registry entry holder;
+    # pyCraft supports only its registry-reference form (a bare VarInt),
+    # which is what vanilla servers send. In protocol 770, a leading
+    # 'global_index' field was added.
     @staticmethod
     def get_id(context):
-        return 0x39 if context.protocol_later_eq(766) else \
+        return 0x3F if context.protocol_later_eq(773) else \
+               0x3A if context.protocol_later_eq(770) else \
+               0x3B if context.protocol_later_eq(768) else \
+               0x39 if context.protocol_later_eq(767) else \
+               0x39 if context.protocol_later_eq(766) else \
                0x37 if context.protocol_later_eq(764) else \
                0x35 if context.protocol_later_eq(762) else \
                0x31 if context.protocol_later_eq(761) else \
@@ -279,6 +278,11 @@ class PlayerChatPacket(Packet):
                     'salt', 'previous_messages', 'unsigned_content',
                     'filter_type', 'filter_type_mask', 'type',
                     'network_name', 'network_target_name')
+        if context.protocol_later_eq(770):
+            return ('global_index', 'sender_uuid', 'index', 'signature',
+                    'plain_message', 'timestamp', 'salt', 'previous_messages',
+                    'unsigned_content', 'filter_type', 'filter_type_mask',
+                    'type', 'network_name', 'network_target_name')
         return ('sender_uuid', 'index', 'signature', 'plain_message',
                 'timestamp', 'salt', 'previous_messages', 'unsigned_content',
                 'filter_type', 'filter_type_mask', 'type', 'network_name',
@@ -316,6 +320,8 @@ class PlayerChatPacket(Packet):
             self.formatted_message = \
                 PrefixedOptional(String).read(file_object)
         else:  # Protocols 761 and later.
+            if context.protocol_later_eq(770):
+                self.global_index = VarInt.read(file_object)
             self.sender_uuid = UUID.read(file_object)
             self.index = VarInt.read(file_object)
             if Boolean.read(file_object):
@@ -388,6 +394,8 @@ class PlayerChatPacket(Packet):
             PrefixedOptional(String).send(
                 self.formatted_message, packet_buffer)
         else:  # Protocols 761 and later.
+            if context.protocol_later_eq(770):
+                VarInt.send(self.global_index, packet_buffer)
             UUID.send(self.sender_uuid, packet_buffer)
             VarInt.send(self.index, packet_buffer)
             Boolean.send(self.signature is not None, packet_buffer)
@@ -431,7 +439,9 @@ class PlayerChatPacket(Packet):
 
 
 class ProfilelessChatPacket(Packet):
-    # Note: added in protocol 761.
+    # Note: added in protocol 761. In protocol 767, the 'type' field became
+    # a registry entry holder; pyCraft supports only its registry-reference
+    # form (a bare VarInt), which is what vanilla servers send.
     @staticmethod
     def get_id(context):
         return 0x21 if context.protocol_later_eq(773) else \

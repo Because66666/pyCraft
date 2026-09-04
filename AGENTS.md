@@ -81,7 +81,19 @@ Coveralls from the `py39` job. `bin/generate_travis_yml.py` regenerates
     `initglobals()` re-derives them; users may mutate the records at runtime
     and call it again to add dynamic version support.
   - `authentication.py` — Mojang/Yggdrasil authentication (`AuthenticationToken`,
-    profile joining/refreshing) built on `requests`.
+    profile joining/refreshing) built on `requests`, plus
+    `MicrosoftAuthenticationToken` (Microsoft device-code login, mimicking
+    node-minecraft-protocol's `src/client/microsoftAuth.js`).
+  - `microsoft/` — Microsoft (MSA) authentication component ported from
+    `prismarine-auth`. Only the OAuth 2.0 **device-code** flow is implemented
+    (no passwords). Chain: `live_token_manager.py` (login.live.com device
+    code) → `xbox_token_manager.py` (XBL user/device/title + XSTS, with
+    proof-of-possession ES256 request signing on `cryptography`) →
+    `java_token_manager.py` (api.minecraftservices.com token/profile/
+    certificates), orchestrated by `auth_flow.py` (`MicrosoftAuthFlow`).
+    Tokens are cached as JSON files via `cache.py` (`FileCache`), named
+    `<sha1(username)[:6]>_{live,xbl,mca}-cache.json` (same scheme as
+    prismarine-auth); default cache dir is `~/.minecraft/nmp-cache`.
   - `exceptions.py` — custom exception hierarchy (e.g. `YggdrasilError`,
     `VersionMismatch`, `LoginDisconnect`, `IgnorePacket`, `InvalidState`).
   - `utility.py` — version-comparison helpers (protocol versions are compared
@@ -108,10 +120,18 @@ Coveralls from the `py39` job. `bin/generate_travis_yml.py` regenerates
 - `docs/` — Sphinx documentation sources (`index.rst`, `authentication.rst`,
   `connecting.rst`).
 - `start.py` — example headless client.
+- `examples/` — standalone runnable example scripts referenced by
+  `TUTORIAL.md` (`connect_offline.py`, `connect_microsoft.py`,
+  `chat_bot.py` — Microsoft device-code login with listeners for every
+  implemented clientbound packet type — and `custom_packet.py`). Each
+  inserts the repo root into `sys.path` so it can run from a checkout.
 - `bin/` — maintenance scripts (shell + Python).
 - `node-minecraft-protocol-master/` — **untracked** vendored copy of the
   Node.js `node-minecraft-protocol` project, kept locally for reference only.
   It is not part of the package, tests, or build; do not modify or rely on it.
+- `prismarine-auth-master/` — **untracked** vendored copy of the Node.js
+  `prismarine-auth` project, kept locally as the reference for the port in
+  `minecraft/microsoft/`; do not modify or rely on it.
 
 ## How packets are defined (key convention)
 
@@ -177,6 +197,9 @@ one:
 - `minecraft/authentication.py` and `start.py` handle Mojang account
   credentials and access tokens. Never log, print, or commit credentials or
   tokens; `.gitignore` already excludes a `credentials` file.
+- The Microsoft token caches written by `minecraft/microsoft/cache.py`
+  (default `~/.minecraft/nmp-cache/*.json`) contain live access and refresh
+  tokens. Never log, print, or commit them either.
 - `minecraft/networking/encryption.py` implements Minecraft's encryption
   handshake (RSA key exchange + AES/CFB8 stream cipher with the shared secret
   as both key and IV — this mirrors the protocol, don't "fix" it). Use the

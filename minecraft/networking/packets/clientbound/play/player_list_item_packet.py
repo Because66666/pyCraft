@@ -39,7 +39,10 @@ class PlayerListItemPacket(Packet):
 
     def field_string(self, field):
         if field == 'action_type':
-            return self.action_type.__name__
+            # 'action_type' is None when a bitmask-style packet (protocols
+            # 761 and later) carries no actions, e.g. an empty entry list.
+            return self.action_type.__name__ \
+                if self.action_type is not None else 'None'
         return super(PlayerListItemPacket, self).field_string(field)
 
     class PlayerList(object):

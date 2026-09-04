@@ -6,6 +6,7 @@ import math
 import struct
 import uuid
 import io
+import functools
 
 import pynbt
 
@@ -424,17 +425,38 @@ class NBT(Type):
         if tag_type == b'\x00':
             # A zero type byte encodes an empty compound.
             return pynbt.NBTFile()
-        # Present the stream to pynbt as a named root tag by prefixing the
-        # type byte with a zero-length root name.
-        return pynbt.NBTFile(io=_AnonymousRootReader(tag_type, file_object))
+        if tag_type == b'\x0A':
+            # Present the stream to pynbt as a named root tag by
+            # prefixing the type byte with a zero-length root name.
+            return pynbt.NBTFile(io=_AnonymousRootReader(
+                tag_type, file_object))
+        # The root tag may be of any type (e.g. chat components in
+        # protocol 765 and later can be a bare string); read the
+        # anonymous payload directly.
+        read = functools.partial(pynbt._read_big, file_object)
+        read.src = file_object
+        return pynbt._tags[tag_type[0]].read(read, has_name=False)
 
     @staticmethod
     def send_with_context(value, socket, context):
         if context.protocol_earlier(764):
             return NBT.send(value, socket)
-        if value is None or len(value) == 0:
+        if value is None or \
+                (isinstance(value, pynbt.TAG_Compound) and len(value) == 0):
             # An empty compound is encoded as a single zero type byte.
             socket.send(b'\x00')
+            return
+        if not isinstance(value, pynbt.TAG_Compound):
+            # A non-compound root tag is written as a type byte followed
+            # by the anonymous payload.
+            socket.send(bytes(bytearray([pynbt._tags.index(type(value))])))
+            buffer = io.BytesIO()
+            write = functools.partial(pynbt._write_big, buffer)
+            write.dst = buffer
+            name, value.name = value.name, None
+            value.write(write)
+            value.name = name
+            socket.send(buffer.getvalue())
             return
         buffer = io.BytesIO()
         pynbt.NBTFile(value=value).save(buffer)
