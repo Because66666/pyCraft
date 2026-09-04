@@ -11,6 +11,8 @@ import re
 
 from .types import VarInt
 from .packets import clientbound, serverbound
+from .packets.clientbound import configuration as clientbound_configuration
+from .packets.serverbound import configuration as serverbound_configuration
 from . import packets, encryption
 from .. import (
     utility, KNOWN_MINECRAFT_VERSIONS, SUPPORTED_MINECRAFT_VERSIONS,
@@ -663,14 +665,20 @@ class PacketReactor(object):
         ready_to_read = select.select([stream], [], [], timeout)[0]
 
         if ready_to_read:
-            length = VarInt.read(stream)
+            try:
+                length = VarInt.read(stream)
 
-            packet_data = packets.PacketBuffer()
-            packet_data.send(stream.read(length))
-            # Ensure we read all the packet
-            while len(packet_data.get_writable()) < length:
-                packet_data.send(
-                    stream.read(length - len(packet_data.get_writable())))
+                packet_data = packets.PacketBuffer()
+                packet_data.send(stream.read(length))
+                # Ensure we read all the packet
+                while len(packet_data.get_writable()) < length:
+                    packet_data.send(
+                        stream.read(length - len(packet_data.get_writable())))
+            except ConnectionError:
+                # On Windows, a connection closed by the peer may be reported
+                # as a reset/abort (WinError 10053/10054) rather than the
+                # clean EOF seen on other platforms; treat it identically.
+                raise EOFError
             packet_data.reset_cursor()
 
             if self.connection.options.compression_enabled:
@@ -769,7 +777,27 @@ class LoginReactor(PacketReactor):
                                   'with: "%s".' % msg)
 
         elif packet.packet_name == "login success":
-            self.connection.reactor = PlayingReactor(self.connection)
+            if self.connection.context.protocol_later_eq(764):
+                # In protocol 764 and later, the login state is followed by
+                # the configuration state, which the client enters after
+                # acknowledging the 'login success' packet.
+                self.connection.write_packet(
+                    serverbound.login.LoginAcknowledgedPacket())
+
+                # Mirror the vanilla client, which sends its client
+                # information upon entering the configuration state; some
+                # servers wait for it before sending 'finish configuration'.
+                self.connection.write_packet(
+                    serverbound_configuration.ClientInformationPacket(
+                        locale='en_US', view_distance=10, chat_mode=0,
+                        chat_colors=True, displayed_skin_parts=0x7F,
+                        main_hand=1, enable_text_filtering=False,
+                        allow_server_listings=True, particle_status=0))
+
+                self.connection.reactor = ConfigurationReactor(
+                    self.connection)
+            else:
+                self.connection.reactor = PlayingReactor(self.connection)
 
         elif packet.packet_name == "set compression":
             self.connection.options.compression_threshold = packet.threshold
@@ -779,6 +807,37 @@ class LoginReactor(PacketReactor):
             self.connection.write_packet(
                 serverbound.login.PluginResponsePacket(
                     message_id=packet.message_id, successful=False))
+
+
+class ConfigurationReactor(PacketReactor):
+    # Note: the configuration state exists in protocol 764 and later only.
+    get_clientbound_packets = staticmethod(
+        clientbound_configuration.get_packets)
+
+    def react(self, packet):
+        if packet.packet_name == "keep alive":
+            keep_alive_packet = serverbound_configuration.KeepAlivePacket()
+            keep_alive_packet.keep_alive_id = packet.keep_alive_id
+            self.connection.write_packet(keep_alive_packet)
+
+        elif packet.packet_name == "ping":
+            pong_packet = serverbound_configuration.PongPacket()
+            pong_packet.ping_id = packet.ping_id
+            self.connection.write_packet(pong_packet)
+
+        elif packet.packet_name == "select known packs":
+            known_packs_packet = \
+                serverbound_configuration.SelectKnownPacksPacket()
+            known_packs_packet.packs = packet.packs
+            self.connection.write_packet(known_packs_packet)
+
+        elif packet.packet_name == "finish configuration":
+            self.connection.write_packet(
+                serverbound_configuration.FinishConfigurationPacket())
+            self.connection.reactor = PlayingReactor(self.connection)
+
+        elif packet.packet_name == "disconnect":
+            self.connection.disconnect()
 
 
 class PlayingReactor(PacketReactor):
@@ -812,6 +871,13 @@ class PlayingReactor(PacketReactor):
 
         elif packet.packet_name == "disconnect":
             self.connection.disconnect()
+
+        elif packet.packet_name == "start configuration":
+            # In protocol 764 and later, the server may switch the
+            # connection back to the configuration state.
+            self.connection.write_packet(
+                serverbound.play.ConfigurationAcknowledgedPacket())
+            self.connection.reactor = ConfigurationReactor(self.connection)
 
 
 class StatusReactor(PacketReactor):

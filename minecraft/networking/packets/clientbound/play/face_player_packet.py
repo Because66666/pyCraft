@@ -8,7 +8,16 @@ from minecraft.networking.packets import Packet
 class FacePlayerPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x37 if context.protocol_later_eq(755) else \
+        return 0x45 if context.protocol_later_eq(773) else \
+               0x40 if context.protocol_later_eq(770) else \
+               0x41 if context.protocol_later_eq(768) else \
+               0x3F if context.protocol_later_eq(766) else \
+               0x3D if context.protocol_later_eq(764) else \
+               0x3B if context.protocol_later_eq(762) else \
+               0x37 if context.protocol_later_eq(761) else \
+               0x38 if context.protocol_later_eq(760) else \
+               0x35 if context.protocol_later_eq(759) else \
+               0x37 if context.protocol_later_eq(755) else \
                0x33 if context.protocol_later_eq(741) else \
                0x34 if context.protocol_later_eq(721) else \
                0x35 if context.protocol_later_eq(550) else \

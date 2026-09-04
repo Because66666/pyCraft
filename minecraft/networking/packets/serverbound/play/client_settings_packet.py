@@ -11,7 +11,15 @@ from minecraft.utility import attribute_transform
 class ClientSettingsPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x05 if context.protocol_later_eq(464) else \
+        return 0x0D if context.protocol_later_eq(771) else \
+               0x0C if context.protocol_later_eq(768) else \
+               0x0A if context.protocol_later_eq(766) else \
+               0x09 if context.protocol_later_eq(764) else \
+               0x08 if context.protocol_later_eq(762) else \
+               0x07 if context.protocol_later_eq(761) else \
+               0x08 if context.protocol_later_eq(760) else \
+               0x07 if context.protocol_later_eq(759) else \
+               0x05 if context.protocol_later_eq(464) else \
                0x04 if context.protocol_later_eq(389) else \
                0x03 if context.protocol_later_eq(343) else \
                0x04 if context.protocol_later_eq(336) else \
@@ -38,6 +46,9 @@ class ClientSettingsPacket(Packet):
 
             {'allow_server_listings': Boolean}
             if context.protocol_later_eq(755) else {},
+
+            {'particle_status': VarInt}
+            if context.protocol_later_eq(768) else {},
         ]
 
     # Set a default value for 'enable_text_filtering', because most clients
@@ -55,6 +66,10 @@ class ClientSettingsPacket(Packet):
     # Set a default value for 'allow_server_listings', because most clients
     # will probably want this value, and to avoid breaking old code.
     allow_server_listings = False
+
+    # Set a default value for 'particle_status' (protocols 768 and later):
+    # 0 = all particles, 1 = decreased, 2 = minimal.
+    particle_status = 0
 
     field_enum = classmethod(
         lambda cls, field, context: {

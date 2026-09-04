@@ -4,7 +4,7 @@ from minecraft import PRE
 from minecraft.networking.packets import Packet
 
 from minecraft.networking.types import (
-    VarInt, Integer, String, MutableRecord
+    VarInt, Integer, String, NBT, MutableRecord, overridable_property,
 )
 
 
@@ -145,25 +145,73 @@ class SpecialisedCombatEventPacket(CombatEventPacket):
 
 @CombatEventPacket.EnterCombatEvent.register  # virtual subclass
 class EnterCombatEventPacket(SpecialisedCombatEventPacket):
+    @staticmethod
+    def get_id(context):
+        return 0x41 if context.protocol_later_eq(773) else \
+               0x3C if context.protocol_later_eq(770) else \
+               0x3D if context.protocol_later_eq(768) else \
+               0x3B if context.protocol_later_eq(766) else \
+               0x39 if context.protocol_later_eq(764) else \
+               0x37 if context.protocol_later_eq(762) else \
+               0x33 if context.protocol_later_eq(761) else \
+               0x35 if context.protocol_later_eq(760) else \
+               0x32 if context.protocol_later_eq(759) else \
+               0x34
+
     packet_name = 'enter combat event'
-    id = 0x34
     definition = []
 
 
 @CombatEventPacket.EndCombatEvent.register  # virtual subclass
 class EndCombatEventPacket(SpecialisedCombatEventPacket):
+    @staticmethod
+    def get_id(context):
+        return 0x40 if context.protocol_later_eq(773) else \
+               0x3B if context.protocol_later_eq(770) else \
+               0x3C if context.protocol_later_eq(768) else \
+               0x3A if context.protocol_later_eq(766) else \
+               0x38 if context.protocol_later_eq(764) else \
+               0x36 if context.protocol_later_eq(762) else \
+               0x32 if context.protocol_later_eq(761) else \
+               0x34 if context.protocol_later_eq(760) else \
+               0x31 if context.protocol_later_eq(759) else \
+               0x33
+
     packet_name = 'end combat event'
-    id = 0x33
-    definition = [
-        {'duration': VarInt},
-        {'entity_id': Integer}]
+
+    @overridable_property
+    def definition(self):
+        # The 'entity_id' field was removed in protocol 763.
+        if self.context is not None and self.context.protocol_later_eq(763):
+            return [{'duration': VarInt}]
+        return [{'duration': VarInt}, {'entity_id': Integer}]
 
 
 @CombatEventPacket.EntityDeadEvent.register  # virtual subclass
 class DeathCombatEventPacket(SpecialisedCombatEventPacket):
+    @staticmethod
+    def get_id(context):
+        return 0x42 if context.protocol_later_eq(773) else \
+               0x3D if context.protocol_later_eq(770) else \
+               0x3E if context.protocol_later_eq(768) else \
+               0x3C if context.protocol_later_eq(766) else \
+               0x3A if context.protocol_later_eq(764) else \
+               0x38 if context.protocol_later_eq(762) else \
+               0x34 if context.protocol_later_eq(761) else \
+               0x36 if context.protocol_later_eq(760) else \
+               0x33 if context.protocol_later_eq(759) else \
+               0x35
+
     packet_name = 'death combat event'
-    id = 0x35
-    definition = [
-        {'player_id': VarInt},
-        {'entity_id': Integer},
-        {'message': String}]
+
+    @overridable_property
+    def definition(self):
+        # The 'entity_id' field was removed in protocol 763, and the
+        # 'message' field became an NBT chat component in protocol 765.
+        message_type = NBT \
+            if (self.context is not None
+                and self.context.protocol_later_eq(765)) else String
+        if self.context is not None and self.context.protocol_later_eq(763):
+            return [{'player_id': VarInt}, {'message': message_type}]
+        return [{'player_id': VarInt}, {'entity_id': Integer},
+                {'message': message_type}]

@@ -1,13 +1,30 @@
 import unittest
+import pynbt
 from minecraft.networking.types import (UUID, VarInt)
 from minecraft.networking.packets import PacketBuffer
 from minecraft.networking.packets.clientbound.play import (
-    PlayerPositionAndLookPacket, PlayerListItemPacket, MapPacket
+    PlayerPositionAndLookPacket, PlayerListItemPacket, PlayerRemovePacket,
+    MapPacket
 )
 from minecraft.networking.packets import serverbound
 from minecraft.networking.connection import ConnectionContext
 
 from tests.test_packets import TEST_VERSIONS
+
+
+def make_display_name(context, text):
+    # In protocols 765 and later, display names are NBT chat components
+    # rather than JSON strings.
+    if text is not None and context.protocol_later_eq(765):
+        return pynbt.TAG_Compound({'text': pynbt.TAG_String(text)}, '')
+    return text
+
+
+def display_name_text(context, display_name):
+    # The inverse of 'make_display_name'.
+    if display_name is not None and context.protocol_later_eq(765):
+        return display_name['text'].value
+    return display_name
 
 
 class PlayerPositionAndLookTest(unittest.TestCase):
@@ -162,11 +179,12 @@ class PlayerListItemTest(unittest.TestCase):
                     ],
                     gamemode=42,
                     ping=69,
-                    display_name='Goodmonson' if display_name else None
+                    display_name=make_display_name(context, 'Goodmonson')
+                    if display_name else None
                 ),
             ],
         )
-        if display_name:
+        if display_name and context.protocol_earlier(765):
             self.assertEqual(
                 str(packet), "0x%02X PlayerListItemPacket("
                 "action_type=AddPlayerAction, actions=[AddPlayerAction("
@@ -199,7 +217,8 @@ class PlayerListItemTest(unittest.TestCase):
             self.assertEqual(player.properties[1].signature, 'gm')
             self.assertEqual(player.gamemode, 42)
             self.assertEqual(player.ping, 69)
-            self.assertEqual(player.display_name, 'Goodmonson')
+            self.assertEqual(
+                display_name_text(context, player.display_name), 'Goodmonson')
 
     def read_and_apply(self, context, packet_buffer, player_list):
         packet_buffer.reset_cursor()
@@ -266,17 +285,21 @@ class PlayerListItemTest(unittest.TestCase):
                 action_type=PlayerListItemPacket.UpdateDisplayNameAction,
                 actions=[
                     PlayerListItemPacket.UpdateDisplayNameAction(
-                        uuid=fake_uuid, display_name='Badmonson'),
+                        uuid=fake_uuid,
+                        display_name=make_display_name(context, 'Badmonson')),
                 ],
             )
-            self.assertEqual(
-                str(packet), "0x%02X PlayerListItemPacket("
-                "action_type=UpdateDisplayNameAction, actions=["
-                "UpdateDisplayNameAction(uuid=%r, display_name='Badmonson')])"
-                % (packet.id, fake_uuid))
+            if context.protocol_earlier(765):
+                self.assertEqual(
+                    str(packet), "0x%02X PlayerListItemPacket("
+                    "action_type=UpdateDisplayNameAction, actions=["
+                    "UpdateDisplayNameAction(uuid=%r, "
+                    "display_name='Badmonson')])" % (packet.id, fake_uuid))
             packet.write_fields(packet_buffer)
             self.read_and_apply(context, packet_buffer, player_list)
-            self.assertEqual(by_uuid[fake_uuid].display_name, 'Badmonson')
+            self.assertEqual(
+                display_name_text(context, by_uuid[fake_uuid].display_name),
+                'Badmonson')
 
             # Remove the display name
             packet_buffer = PacketBuffer()
@@ -293,19 +316,32 @@ class PlayerListItemTest(unittest.TestCase):
 
             # Remove the player
             packet_buffer = PacketBuffer()
-            packet = PlayerListItemPacket(
-                context=context,
-                action_type=PlayerListItemPacket.RemovePlayerAction,
-                actions=[
-                    PlayerListItemPacket.RemovePlayerAction(uuid=fake_uuid),
-                ],
-            )
-            self.assertEqual(
-                str(packet), "0x%02X PlayerListItemPacket("
-                "action_type=RemovePlayerAction, actions=[RemovePlayerAction("
-                "uuid=%r)])" % (packet.id, fake_uuid))
-            packet.write_fields(packet_buffer)
-            self.read_and_apply(context, packet_buffer, player_list)
+            if context.protocol_later_eq(768):
+                # In protocols 768 and later, removal cannot be represented
+                # in the player info packet's action bitmask; the separate
+                # 'player remove' packet is used instead.
+                packet = PlayerRemovePacket(
+                    context=context, uuids=[fake_uuid])
+                packet.write_fields(packet_buffer)
+                packet_buffer.reset_cursor()
+                packet = PlayerRemovePacket(context)
+                packet.read(packet_buffer)
+                packet.apply(player_list)
+            else:
+                packet = PlayerListItemPacket(
+                    context=context,
+                    action_type=PlayerListItemPacket.RemovePlayerAction,
+                    actions=[
+                        PlayerListItemPacket.RemovePlayerAction(
+                            uuid=fake_uuid),
+                    ],
+                )
+                self.assertEqual(
+                    str(packet), "0x%02X PlayerListItemPacket("
+                    "action_type=RemovePlayerAction, actions=["
+                    "RemovePlayerAction(uuid=%r)])" % (packet.id, fake_uuid))
+                packet.write_fields(packet_buffer)
+                self.read_and_apply(context, packet_buffer, player_list)
             self.assertNotIn(fake_uuid, player_list.players_by_uuid)
 
 

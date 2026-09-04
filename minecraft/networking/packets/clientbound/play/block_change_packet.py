@@ -9,7 +9,11 @@ from minecraft.networking.types import (
 class BlockChangePacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x0C if context.protocol_later_eq(755) else \
+        return 0x08 if context.protocol_later_eq(770) else \
+               0x09 if context.protocol_later_eq(764) else \
+               0x0A if context.protocol_later_eq(762) else \
+               0x09 if context.protocol_later_eq(759) else \
+               0x0C if context.protocol_later_eq(755) else \
                0x0B if context.protocol_later_eq(721) else \
                0x0C if context.protocol_later_eq(550) else \
                0x0B if context.protocol_later_eq(332) else \
@@ -49,7 +53,17 @@ class BlockChangePacket(Packet):
 class MultiBlockChangePacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x3F if context.protocol_later_eq(755) else \
+        return 0x52 if context.protocol_later_eq(773) else \
+               0x4D if context.protocol_later_eq(770) else \
+               0x4E if context.protocol_later_eq(768) else \
+               0x49 if context.protocol_later_eq(766) else \
+               0x47 if context.protocol_later_eq(765) else \
+               0x45 if context.protocol_later_eq(764) else \
+               0x43 if context.protocol_later_eq(762) else \
+               0x3F if context.protocol_later_eq(761) else \
+               0x40 if context.protocol_later_eq(760) else \
+               0x3D if context.protocol_later_eq(759) else \
+               0x3F if context.protocol_later_eq(755) else \
                0x3B if context.protocol_later_eq(741) else \
                0x0F if context.protocol_later_eq(721) else \
                0x10 if context.protocol_later_eq(550) else \
@@ -114,7 +128,11 @@ class MultiBlockChangePacket(Packet):
         def read_with_context(cls, file_object, context):
             record = cls()
             if context.protocol_later_eq(741):
-                value = VarLong.read(file_object)
+                # Records are VarInts in protocols 759 and later, and
+                # VarLongs in protocols 741 to 758.
+                record_type = VarInt if context.protocol_later_eq(759) \
+                    else VarLong
+                value = record_type.read(file_object)
                 record.block_state_id = value >> 12
                 record.x = (value >> 8) & 0xF
                 record.z = (value >> 4) & 0xF
@@ -134,7 +152,9 @@ class MultiBlockChangePacket(Packet):
                         (record.x & 0xF) << 8 | \
                         (record.z & 0xF) << 4 | \
                         record.y & 0xF
-                VarLong.send(value, socket)
+                record_type = VarInt if context.protocol_later_eq(759) \
+                    else VarLong
+                record_type.send(value, socket)
             else:
                 UnsignedByte.send(record.x << 4 | record.z & 0xF, socket)
                 UnsignedByte.send(record.y, socket)
@@ -143,7 +163,7 @@ class MultiBlockChangePacket(Packet):
     get_definition = staticmethod(lambda context: [
         {'chunk_section_pos': MultiBlockChangePacket.ChunkSectionPos},
         {'invert_trust_edges': Boolean}
-        if context.protocol_later_eq(748) else {},  # Provisional field name.
+        if context.protocol_in_range(748, 763) else {},  # Provisional name.
         {'records': PrefixedArray(VarInt, MultiBlockChangePacket.Record)},
     ] if context.protocol_later_eq(741) else [
         {'chunk_x': Integer},

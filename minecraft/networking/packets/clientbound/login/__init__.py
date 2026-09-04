@@ -1,7 +1,8 @@
 from minecraft.networking.packets import Packet
 
 from minecraft.networking.types import (
-    VarInt, String, VarIntPrefixedByteArray, TrailingByteArray, UUID,
+    Type, VarInt, String, Boolean, VarIntPrefixedByteArray,
+    TrailingByteArray, UUID, PrefixedArray, PrefixedOptional, MutableRecord,
 )
 
 
@@ -40,10 +41,15 @@ class EncryptionRequestPacket(Packet):
                0x01
 
     packet_name = "encryption request"
-    definition = [
+    get_definition = staticmethod(lambda context: [
         {'server_id': String},
         {'public_key': VarIntPrefixedByteArray},
-        {'verify_token': VarIntPrefixedByteArray}]
+        {'verify_token': VarIntPrefixedByteArray},
+        {'should_authenticate': Boolean}
+        if context.protocol_later_eq(766) else {},
+    ])
+
+    should_authenticate = True
 
 
 class LoginSuccessPacket(Packet):
@@ -54,10 +60,39 @@ class LoginSuccessPacket(Packet):
                0x02
 
     packet_name = "login success"
+
+    class Property(MutableRecord, Type):
+        """ A single entry of the 'properties' array sent in protocols 759
+            and later. """
+        __slots__ = 'name', 'value', 'signature'
+
+        @classmethod
+        def read(cls, file_object):
+            record = cls()
+            record.name = String.read(file_object)
+            record.value = String.read(file_object)
+            record.signature = PrefixedOptional(String).read(file_object)
+            return record
+
+        @classmethod
+        def send(cls, record, socket):
+            String.send(record.name, socket)
+            String.send(record.value, socket)
+            PrefixedOptional(String).send(record.signature, socket)
+
     get_definition = staticmethod(lambda context: [
         {'UUID': UUID if context.protocol_later_eq(707) else String},
-        {'Username': String}
+        {'Username': String},
+        {'properties': PrefixedArray(VarInt, LoginSuccessPacket.Property)}
+        if context.protocol_later_eq(759) else {},
+        # The 'strict_error_handling' field was added in protocol 766 and
+        # removed in protocol 768.
+        {'strict_error_handling': Boolean}
+        if context.protocol_in_range(766, 768) else {},
     ])
+
+    properties = ()
+    strict_error_handling = False
 
 
 class SetCompressionPacket(Packet):

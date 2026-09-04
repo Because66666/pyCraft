@@ -86,3 +86,7 @@ sftp-config.json
 
 ### pyCraft ###
 credentials
+
+## 上游模仿复刻的协议库
+minecraft-data-master/
+node-minecraft-protocol-master/

@@ -3,6 +3,12 @@ from minecraft import (
     PROTOCOL_VERSION_INDICES,
 )
 from minecraft.networking.packets import clientbound, serverbound
+from minecraft.networking.packets.clientbound import (
+    configuration as clientbound_configuration,
+)
+from minecraft.networking.packets.serverbound import (
+    configuration as serverbound_configuration,
+)
 from minecraft.networking.connection import Connection
 from minecraft.exceptions import (
     VersionMismatch, LoginDisconnect, InvalidState, IgnorePacket
@@ -36,6 +42,14 @@ class ConnectTest(fake_server._FakeServerTest):
 class ReconnectTest(ConnectTest):
     phase = 0
 
+    @staticmethod
+    def disconnect_reason(packet):
+        if isinstance(packet.json_data, str):
+            return packet.json_data
+        # In protocols 765 and later, the disconnect reason is an NBT chat
+        # component rather than a JSON string.
+        return packet.json_data['text'].value
+
     def _start_client(self, client):
         def handle_login_disconnect(packet):
             if 'Please reconnect' in packet.json_data:
@@ -48,9 +62,10 @@ class ReconnectTest(ConnectTest):
             early=True)
 
         def handle_play_disconnect(packet):
-            if 'Please reconnect' in packet.json_data:
+            reason = ReconnectTest.disconnect_reason(packet)
+            if 'Please reconnect' in reason:
                 client.connect()
-            elif 'Test successful' in packet.json_data:
+            elif 'Test successful' in reason:
                 raise fake_server.FakeServerTestSuccess
         client.register_packet_listener(
             handle_play_disconnect, clientbound.play.DisconnectPacket)
@@ -71,6 +86,66 @@ class ReconnectTest(ConnectTest):
             else:
                 assert self.server.test_case.phase == 2
                 raise fake_server.FakeServerDisconnect('Test successful (2).')
+
+
+class ConfigurationStateTest(fake_server._FakeServerTest):
+    """ Test the configuration state of protocols 764 and later: the client
+        must acknowledge the login success, send its client information,
+        respond to keep alive, ping and select known packs packets, and
+        acknowledge the end of the configuration state.
+    """
+    server_version = '1.21.11'
+
+    def test_configuration_state(self):
+        self._test_connect()
+
+    class client_handler_type(fake_server.FakeClientHandler):
+        def handle_configuration(self):
+            self.write_packet(clientbound_configuration.KeepAlivePacket(
+                keep_alive_id=987654321))
+            self.write_packet(clientbound_configuration.PingPacket(
+                ping_id=-387))
+            if self.server.context.protocol_later_eq(766):
+                KnownPack = clientbound_configuration \
+                    .SelectKnownPacksPacket.KnownPack
+                self.write_packet(
+                    clientbound_configuration.SelectKnownPacksPacket(packs=[
+                        KnownPack(namespace='minecraft', id='core',
+                                  version='1.21.11')]))
+
+            packet = self.read_packet()
+            assert isinstance(
+                packet, serverbound_configuration.KeepAlivePacket)
+            assert packet.keep_alive_id == 987654321
+
+            packet = self.read_packet()
+            assert isinstance(packet, serverbound_configuration.PongPacket)
+            assert packet.ping_id == -387
+
+            if self.server.context.protocol_later_eq(766):
+                packet = self.read_packet()
+                assert isinstance(
+                    packet, serverbound_configuration.SelectKnownPacksPacket)
+                assert len(packet.packs) == 1
+                assert packet.packs[0].namespace == 'minecraft'
+                assert packet.packs[0].id == 'core'
+                assert packet.packs[0].version == '1.21.11'
+
+            super(ConfigurationStateTest.client_handler_type, self) \
+                .handle_configuration()
+
+        def handle_play_start(self):
+            super(ConfigurationStateTest.client_handler_type, self) \
+                .handle_play_start()
+            raise fake_server.FakeServerDisconnect('Test successful.')
+
+    def _start_client(self, client):
+        def handle_disconnect(packet):
+            raise fake_server.FakeServerTestSuccess
+        client.register_packet_listener(
+            handle_disconnect, clientbound.play.DisconnectPacket)
+
+        client.connect()
 
 
 class PingTest(ConnectTest):

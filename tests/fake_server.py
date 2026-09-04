@@ -6,6 +6,15 @@ from minecraft.networking import types
 from minecraft.networking import packets
 from minecraft.networking.packets import clientbound
 from minecraft.networking.packets import serverbound
+from minecraft.networking.packets.clientbound import (
+    configuration as clientbound_configuration,
+)
+from minecraft.networking.packets.serverbound import (
+    configuration as serverbound_configuration,
+)
+from minecraft.networking.packets.serverbound.login import (
+    offline_player_uuid,
+)
 from minecraft.networking.encryption import (
     create_AES_cipher, EncryptedFileObjectWrapper, EncryptedSocketWrapper
 )
@@ -20,11 +29,10 @@ import socket
 import json
 import sys
 import zlib
-import hashlib
 import uuid
 
 
-THREAD_TIMEOUT_S = 2
+THREAD_TIMEOUT_S = 10
 
 
 class FakeClientDisconnect(Exception):
@@ -70,16 +78,29 @@ class FakeClientHandler(object):
         # Communicate with the client until disconnected.
         try:
             self._run_handshake()
-            try:
-                self.socket.shutdown(socket.SHUT_RDWR)
-            except IOError:
-                pass
+            self._graceful_close()
         except (FakeClientDisconnect, BrokenPipeError) as exc:
             if not self.handle_abnormal_disconnect(exc):
                 raise
         finally:
             self.socket.close()
             self.socket_file.close()
+
+    def _graceful_close(self):
+        # Half-close the connection and drain any unread client data before
+        # closing, so the client receives a clean FIN rather than a RST
+        # (which on Windows could discard the packets we have just sent).
+        sock = getattr(self.socket, 'actual_socket', self.socket)
+        try:
+            sock.shutdown(socket.SHUT_WR)
+            sock.settimeout(1)
+            while sock.recv(4096):
+                pass
+        except (IOError, socket.error):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except IOError:
+                pass
 
     def handle_abnormal_disconnect(self, exc):
         # Called when the client disconnects in an abnormal fashion. If this
@@ -102,10 +123,15 @@ class FakeClientHandler(object):
         # compression and encryption, if applicable, have been set up. The
         # client's LoginStartPacket is given as an argument.
         self.user_name = login_start_packet.name
-        self.user_uuid = uuid.UUID(bytes=hashlib.md5(
-            ('OfflinePlayer:%s' % self.user_name).encode('utf8')).digest())
+        self.user_uuid = uuid.UUID(offline_player_uuid(self.user_name))
         self.write_packet(clientbound.login.LoginSuccessPacket(
             UUID=str(self.user_uuid), Username=self.user_name))
+
+    def handle_configuration(self):
+        # Called upon entering the configuration state (protocols 764 and
+        # later), after the client has acknowledged the login success.
+        self.write_packet(
+            clientbound_configuration.FinishConfigurationPacket())
 
     def handle_play_start(self):
         # Called upon entering the play state.
@@ -118,16 +144,23 @@ class FakeClientHandler(object):
             simulation_distance=9, respawn_screen=False, is_debug=False,
             is_flat=False)
 
-        if self.server.context.protocol_later_eq(748):
-            packet.dimension = pynbt.TAG_Compound({
-                'natural': pynbt.TAG_Byte(1),
-                'effects': pynbt.TAG_String('minecraft:overworld'),
-            }, '')
+        dimension_nbt = pynbt.TAG_Compound({
+            'natural': pynbt.TAG_Byte(1),
+            'effects': pynbt.TAG_String('minecraft:overworld'),
+        }, '')
+
+        if self.server.context.protocol_later_eq(766):
+            # The dimension is given as a 'minecraft:dimension_type'
+            # registry ID within the 'world_state' SpawnInfo record.
+            packet.dimension = 0
+        elif self.server.context.protocol_later_eq(759):
+            packet.dimension = 'minecraft:overworld'
+        elif self.server.context.protocol_later_eq(748):
             packet.dimension_codec = pynbt.TAG_Compound({
                 'minecraft:dimension_type': pynbt.TAG_Compound({
                     'type': pynbt.TAG_String('minecraft:dimension_type'),
                     'value': pynbt.TAG_List(pynbt.TAG_Compound, [
-                        pynbt.TAG_Compound(packet.dimension),
+                        pynbt.TAG_Compound(dimension_nbt),
                     ]),
                 }),
                 'minecraft:worldgen/biome': pynbt.TAG_Compound({
@@ -144,6 +177,7 @@ class FakeClientHandler(object):
                     ]),
                 }),
             }, '')
+            packet.dimension = dimension_nbt
         elif self.server.context.protocol_later_eq(718):
             packet.dimension = 'minecraft:overworld'
         else:
@@ -155,10 +189,38 @@ class FakeClientHandler(object):
         # Called upon each packet received after handle_play_start() returns.
         if isinstance(packet, serverbound.play.ChatPacket):
             assert len(packet.message) <= packet.max_length
-            self.write_packet(clientbound.play.ChatMessagePacket(json.dumps({
-                'translate': 'chat.type.text',
-                'with': [self.username, packet.message],
-            })))
+            if self.server.context.protocol_later_eq(765):
+                # The 'chat message' packet was removed in protocol 759, and
+                # chat components changed from JSON strings to NBT in
+                # protocol 765.
+                echo_packet = clientbound.play.SystemChatPacket(
+                    content=pynbt.TAG_Compound({
+                        'translate': pynbt.TAG_String('chat.type.text'),
+                        'with': pynbt.TAG_List(pynbt.TAG_String, [
+                            pynbt.TAG_String(self.user_name),
+                            pynbt.TAG_String(packet.message)]),
+                    }, ''))
+                echo_packet.is_action_bar = False
+            elif self.server.context.protocol_later_eq(759):
+                # The 'chat message' packet was removed in protocol 759;
+                # echo the message back as a system chat message instead.
+                echo = json.dumps({
+                    'translate': 'chat.type.text',
+                    'with': [self.user_name, packet.message]})
+                echo_packet = clientbound.play.SystemChatPacket(content=echo)
+                if self.server.context.protocol_later_eq(760):
+                    echo_packet.is_action_bar = False
+                else:
+                    echo_packet.type = 1  # System chat.
+            else:
+                echo_packet = clientbound.play.ChatMessagePacket(
+                    json_data=json.dumps({
+                        'translate': 'chat.type.text',
+                        'with': [self.user_name, packet.message]}))
+                echo_packet.position = echo_packet.Position.SYSTEM
+                if self.server.context.protocol_later_eq(718):
+                    echo_packet.sender = str(uuid.UUID(int=0))
+            self.write_packet(echo_packet)
 
     def handle_status(self, request_packet):
         # Called in the first phase of the status state, to send the Response
@@ -192,8 +254,15 @@ class FakeClientHandler(object):
     def handle_play_server_disconnect(self, message):
         # As 'handle_login_server_disconnect', but for the play state.
         message = 'Disconnected.' if message is None else message
-        self.write_packet(clientbound.play.DisconnectPacket(
-            json_data=json.dumps({'text': message})))
+        if self.server.context.protocol_later_eq(765):
+            # In protocol 765 and later, the disconnect reason is an NBT
+            # chat component rather than a JSON string.
+            self.write_packet(clientbound.play.DisconnectPacket(
+                json_data=pynbt.TAG_Compound({
+                    'text': pynbt.TAG_String(message)}, '')))
+        else:
+            self.write_packet(clientbound.play.DisconnectPacket(
+                json_data=json.dumps({'text': message})))
 
     def handle_play_client_disconnect(self):
         # Called when the client cleanly terminates the connection during play.
@@ -203,9 +272,15 @@ class FakeClientHandler(object):
         # Send and log a clientbound packet.
         packet.context = self.server.context
         logging.debug('[S-> ] %s' % packet)
-        packet.write(self.socket, **(
-            {'compression_threshold': self.server.compression_threshold}
-            if self.compression_enabled else {}))
+        try:
+            packet.write(self.socket, **(
+                {'compression_threshold': self.server.compression_threshold}
+                if self.compression_enabled else {}))
+        except ConnectionError:
+            # The client has already gone away (on Windows a closed connection
+            # may be reported as a reset, WinError 10054); the next read will
+            # notice the disconnect.
+            logging.debug('[S-> ] client disconnected during write.')
 
     def read_packet(self):
         # Read and log a serverbound packet from the client, or raises
@@ -271,7 +346,37 @@ class FakeClientHandler(object):
         except FakeServerDisconnect as e:
             self.handle_login_server_disconnect(message=e.message)
         else:
+            if self.server.context.protocol_later_eq(764):
+                self._run_configuration()
             self._run_playing()
+
+    def _run_configuration(self):
+        # Enter the configuration state of the connection (protocols 764
+        # and later only), which follows the login state.
+        packet = self.read_packet()
+        assert isinstance(packet, serverbound.login.LoginAcknowledgedPacket)
+
+        self.packets = self.server.packets_configuration
+        packet = self.read_packet()
+        assert isinstance(
+            packet, serverbound_configuration.ClientInformationPacket)
+
+        try:
+            self.handle_configuration()
+        except FakeServerDisconnect as e:
+            message = 'Connection denied.' if e.message is None \
+                else e.message
+            if self.server.context.protocol_later_eq(765):
+                json_data = pynbt.TAG_Compound({
+                    'text': pynbt.TAG_String(message)}, '')
+            else:
+                json_data = json.dumps({'text': message})
+            self.write_packet(clientbound_configuration.DisconnectPacket(
+                json_data=json_data))
+            raise FakeServerDisconnect
+        packet = self.read_packet()
+        assert isinstance(
+            packet, serverbound_configuration.FinishConfigurationPacket)
 
     def _run_login_encryption(self):
         # Set up protocol encryption with the client, then return.
@@ -330,12 +435,15 @@ class FakeClientHandler(object):
         # FakeClientDisconnect if the client has cleanly disconnected.
         try:
             length = types.VarInt.read(self.socket_file)
-        except EOFError:
+            buffer = packets.PacketBuffer()
+            while len(buffer.get_writable()) < length:
+                data = self.socket_file.read(
+                    length - len(buffer.get_writable()))
+                buffer.send(data)
+        except (EOFError, ConnectionError):
+            # On Windows, a closed connection may be reported as a reset
+            # (WinError 10054) rather than a clean EOF.
             raise FakeClientDisconnect
-        buffer = packets.PacketBuffer()
-        while len(buffer.get_writable()) < length:
-            data = self.socket_file.read(length - len(buffer.get_writable()))
-            buffer.send(data)
         buffer.reset_cursor()
         if self.compression_enabled:
             data_length = types.VarInt.read(buffer)
@@ -375,8 +483,8 @@ class FakeServer(object):
     __slots__ = 'listen_socket', 'compression_threshold', 'context', \
                 'minecraft_version', 'client_handler_type', 'server_type', \
                 'packets_handshake', 'packets_login', 'packets_playing', \
-                'packets_status', 'lock', 'stopping', 'private_key', \
-                'public_key_bytes', 'test_case'
+                'packets_configuration', 'packets_status', 'lock', \
+                'stopping', 'private_key', 'public_key_bytes', 'test_case'
 
     def __init__(self, minecraft_version=None, compression_threshold=None,
                  client_handler_type=FakeClientHandler, private_key=None,
@@ -412,6 +520,11 @@ class FakeServer(object):
         self.packets_playing = {
             p.get_id(self.context): p for p in
             serverbound.play.get_packets(self.context)}
+
+        self.packets_configuration = {
+            p.get_id(self.context): p for p in
+            serverbound_configuration.get_packets(self.context)} \
+            if self.context.protocol_later_eq(764) else {}
 
         self.packets_status = {
             p.get_id(self.context): p for p in

@@ -10,7 +10,8 @@ from minecraft.networking.types import (
 class SpawnObjectPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x00 if context.protocol_later_eq(67) else \
+        return 0x01 if context.protocol_later_eq(762) else \
+               0x00 if context.protocol_later_eq(67) else \
                0x0E
 
     packet_name = 'spawn object'
@@ -106,8 +107,13 @@ class SpawnObjectPacket(Packet):
             setattr(self, attr, xyz_type.read(file_object))
         for attr in 'pitch', 'yaw':
             setattr(self, attr, Angle.read(file_object))
+        if self.context.protocol_later_eq(759):
+            self.head_pitch = Angle.read(file_object)
 
-        self.data = Integer.read(file_object)
+        if self.context.protocol_later_eq(759):
+            self.data = VarInt.read(file_object)
+        else:
+            self.data = Integer.read(file_object)
         if self.context.protocol_later_eq(49) or self.data > 0:
             for attr in 'velocity_x', 'velocity_y', 'velocity_z':
                 setattr(self, attr, Short.read(file_object))
@@ -128,8 +134,13 @@ class SpawnObjectPacket(Packet):
             xyz_type.send(coord, packet_buffer)
         for coord in self.pitch, self.yaw:
             Angle.send(coord, packet_buffer)
+        if self.context.protocol_later_eq(759):
+            Angle.send(self.head_pitch, packet_buffer)
 
-        Integer.send(self.data, packet_buffer)
+        if self.context.protocol_later_eq(759):
+            VarInt.send(self.data, packet_buffer)
+        else:
+            Integer.send(self.data, packet_buffer)
         if self.context.protocol_later_eq(49) or self.data > 0:
             for coord in self.velocity_x, self.velocity_y, self.velocity_z:
                 Short.send(coord, packet_buffer)

@@ -7,9 +7,17 @@ from minecraft.networking.types import (
 
 
 class MapPacket(Packet):
+    # Note: in protocol 765, the 'display_name' of map icons changed from
+    # a chat JSON string to NBT, which pyCraft does not currently support;
+    # this packet is not registered for protocols 765 and later.
     @staticmethod
     def get_id(context):
-        return 0x27 if context.protocol_later_eq(755) else \
+        return 0x2A if context.protocol_later_eq(764) else \
+               0x29 if context.protocol_later_eq(762) else \
+               0x25 if context.protocol_later_eq(761) else \
+               0x26 if context.protocol_later_eq(760) else \
+               0x24 if context.protocol_later_eq(759) else \
+               0x27 if context.protocol_later_eq(755) else \
                0x25 if context.protocol_later_eq(741) else \
                0x26 if context.protocol_later_eq(721) else \
                0x27 if context.protocol_later_eq(550) else \

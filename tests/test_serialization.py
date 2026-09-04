@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import math
 import unittest
+import pynbt
 from minecraft.networking.types import (
     Type, Boolean, UnsignedByte, Byte, Short, UnsignedShort,
     Integer, FixedPointInteger, Angle, VarInt, Long, Float, Double,
     ShortPrefixedByteArray, VarIntPrefixedByteArray, UUID,
     String as StringType, Position, TrailingByteArray, UnsignedLong,
+    NBT, LpVec3,
 )
+from minecraft.networking.packets.clientbound.play\
+    .join_game_and_respawn_packets import nbt_to_snbt
 from minecraft.networking.packets.clientbound.play import (
     MultiBlockChangePacket
 )
@@ -76,6 +81,67 @@ class SerializationTest(unittest.TestCase):
                             self.assertAlmostEqual(test_data, deserialized, 3)
                         else:
                             self.assertEqual(test_data, deserialized)
+
+    def test_nbt_root_name(self):
+        # In protocols before 764, NBT is written with a named root tag;
+        # in protocol 764 and later, the root tag is anonymous (the type
+        # byte is followed directly by the payload), and an empty compound
+        # is encoded as a single zero byte.
+        value = pynbt.TAG_Compound({
+            'name': pynbt.TAG_String('Herobrine'),
+            'health': pynbt.TAG_Short(20),
+            'tags': pynbt.TAG_List(pynbt.TAG_String, [
+                pynbt.TAG_String('a'), pynbt.TAG_String('b')]),
+        }, '')
+
+        for protocol_version in TEST_VERSIONS:
+            context = ConnectionContext(protocol_version=protocol_version)
+            packet_buffer = PacketBuffer()
+            NBT.send_with_context(value, packet_buffer, context)
+            if context.protocol_later_eq(764):
+                # Anonymous root: no two-byte name after the type byte.
+                self.assertEqual(packet_buffer.get_writable()[:3],
+                                 b'\x0a\x08\x00')
+            else:
+                # Named root: an empty name follows the type byte.
+                self.assertEqual(packet_buffer.get_writable()[:3],
+                                 b'\x0a\x00\x00')
+            packet_buffer.reset_cursor()
+            # pynbt tags do not implement equality, so compare the
+            # string representations of the tag trees.
+            self.assertEqual(
+                nbt_to_snbt(NBT.read_with_context(packet_buffer, context)),
+                nbt_to_snbt(value))
+
+        # An empty compound is a single zero byte in protocols 764+.
+        context = ConnectionContext(protocol_version=764)
+        packet_buffer = PacketBuffer()
+        NBT.send_with_context(pynbt.TAG_Compound(), packet_buffer, context)
+        self.assertEqual(packet_buffer.get_writable(), b'\x00')
+        packet_buffer.reset_cursor()
+        self.assertEqual(
+            nbt_to_snbt(NBT.read_with_context(packet_buffer, context)),
+            '{}')
+
+    def test_lp_vec3(self):
+        # LpVec3 (protocols 773+) is a quantized encoding, so the round-trip
+        # is only accurate to within one quantization step of the scale.
+        test_cases = [
+            (0.0, 0.0, 0.0),
+            (1.0, -2.5, 0.75),
+            (3.0, 3.0, 3.0),
+            (10.0, -25.5, 100.0),
+            (-0.001, 0.002, -0.003),
+        ]
+        for test_data in test_cases:
+            packet_buffer = PacketBuffer()
+            LpVec3.send(test_data, packet_buffer)
+            packet_buffer.reset_cursor()
+            deserialized = LpVec3.read(packet_buffer)
+            scale = max(1, int(math.ceil(max(map(abs, test_data)))))
+            for expected, actual in zip(test_data, deserialized):
+                self.assertAlmostEqual(
+                    expected, actual, delta=2.0 / 32766 * scale)
 
     def test_exceptions(self):
         base_type = Type()

@@ -2,6 +2,7 @@
 Each type has a method which is used to read and write it.
 These definitions and methods are used by the packet definitions
 """
+import math
 import struct
 import uuid
 import io
@@ -16,7 +17,7 @@ __all__ = (
     'Integer', 'FixedPoint', 'FixedPointInteger', 'Angle', 'VarInt', 'VarLong',
     'Long', 'UnsignedLong', 'Float', 'Double', 'ShortPrefixedByteArray',
     'VarIntPrefixedByteArray', 'TrailingByteArray', 'String', 'UUID',
-    'Position', 'NBT', 'PrefixedArray',
+    'Position', 'LpVec3', 'NBT', 'PrefixedArray', 'PrefixedOptional',
 )
 
 
@@ -342,6 +343,66 @@ class Position(Type, Vector):
         UnsignedLong.send(value, socket)
 
 
+class LpVec3(Type, Vector):
+    """A variable-length, quantized 3D vector of floats, introduced in
+       protocol 773 (1.21.9) for entity velocities. A zero vector is a
+       single zero byte; otherwise the vector is packed into 6 bytes,
+       optionally followed by a VarInt scale continuation."""
+    __slots__ = ()
+
+    _MAX_QUANTIZED_VALUE = 32766.0
+    _ABS_MIN_VALUE = 3.051944088384301e-05
+    _ABS_MAX_VALUE = 1.7179869183e10
+
+    @staticmethod
+    def _unpack(packed, shift):
+        quantized = min((packed >> shift) & 0x7FFF,
+                        int(LpVec3._MAX_QUANTIZED_VALUE))
+        return quantized * 2.0 / LpVec3._MAX_QUANTIZED_VALUE - 1.0
+
+    @staticmethod
+    def read(file_object):
+        first = UnsignedByte.read(file_object)
+        if first == 0:
+            return LpVec3(0.0, 0.0, 0.0)
+        packed = first \
+            + (UnsignedByte.read(file_object) << 8) \
+            + (struct.unpack('>I', file_object.read(4))[0] << 16)
+        scale = first & 3
+        if first & 4:
+            scale += VarInt.read(file_object) * 4
+        return LpVec3(*(LpVec3._unpack(packed, shift) * scale
+                        for shift in (3, 18, 33)))
+
+    @staticmethod
+    def send(value, socket):
+        def sanitize(component):
+            return max(-LpVec3._ABS_MAX_VALUE,
+                       min(float(component), LpVec3._ABS_MAX_VALUE))
+
+        x, y, z = (sanitize(component) for component in value)
+        maximum = max(abs(x), abs(y), abs(z))
+        if maximum < LpVec3._ABS_MIN_VALUE:
+            UnsignedByte.send(0, socket)
+            return
+
+        scale = int(math.ceil(maximum))
+        continuation = scale > 3
+        markers = (scale % 4) | 4 if continuation else scale
+
+        def pack(component):
+            return int(math.floor(
+                (component / scale * 0.5 + 0.5) * 32766 + 0.5))
+
+        packed = markers + (pack(x) << 3) + (pack(y) << 18) \
+            + (pack(z) << 33)
+        UnsignedByte.send(packed & 0xFF, socket)
+        UnsignedByte.send((packed >> 8) & 0xFF, socket)
+        socket.send(struct.pack('>I', (packed >> 16) & 0xFFFFFFFF))
+        if continuation:
+            VarInt.send(scale // 4, socket)
+
+
 class NBT(Type):
     @staticmethod
     def read(file_object):
@@ -352,6 +413,52 @@ class NBT(Type):
         buffer = io.BytesIO()
         pynbt.NBTFile(value=value).save(buffer)
         socket.send(buffer.getvalue())
+
+    @staticmethod
+    def read_with_context(file_object, context):
+        if context.protocol_earlier(764):
+            return NBT.read(file_object)
+        # In protocol 764 and later, the root tag is anonymous: the type
+        # byte is followed directly by the payload, with no root name.
+        tag_type = file_object.read(1)
+        if tag_type == b'\x00':
+            # A zero type byte encodes an empty compound.
+            return pynbt.NBTFile()
+        # Present the stream to pynbt as a named root tag by prefixing the
+        # type byte with a zero-length root name.
+        return pynbt.NBTFile(io=_AnonymousRootReader(tag_type, file_object))
+
+    @staticmethod
+    def send_with_context(value, socket, context):
+        if context.protocol_earlier(764):
+            return NBT.send(value, socket)
+        if value is None or len(value) == 0:
+            # An empty compound is encoded as a single zero type byte.
+            socket.send(b'\x00')
+            return
+        buffer = io.BytesIO()
+        pynbt.NBTFile(value=value).save(buffer)
+        data = buffer.getvalue()
+        # Strip the (always empty) root name: keep the leading type byte
+        # and skip the following two-byte name length.
+        socket.send(data[:1] + data[3:])
+
+
+class _AnonymousRootReader(object):
+    """ A file-like object that serves the given prefix bytes followed by
+        the contents of an underlying file-like object. Used to present an
+        anonymous-root NBT tag to pynbt as a named root tag. """
+    __slots__ = 'prefix', 'file_object'
+
+    def __init__(self, prefix, file_object):
+        self.prefix = io.BytesIO(prefix + b'\x00\x00')
+        self.file_object = file_object
+
+    def read(self, length=-1):
+        if length is None or length < 0:
+            return self.prefix.read() + self.file_object.read()
+        head = self.prefix.read(length)
+        return head + self.file_object.read(length - len(head))
 
 
 class PrefixedArray(Type):
@@ -385,3 +492,30 @@ class PrefixedArray(Type):
         self.length_type.send(len(value), socket)
         for element in value:
             element_send(element, socket)
+
+
+class PrefixedOptional(Type):
+    """ An optional value, prefixed by a Boolean indicating whether it is
+        present. 'None' is read and written as an absent value. """
+    __slots__ = 'element_type',
+
+    def __init__(self, element_type):
+        self.element_type = element_type
+
+    def read(self, file_object):
+        if Boolean.read(file_object):
+            return self.element_type.read(file_object)
+
+    def send(self, value, socket):
+        Boolean.send(value is not None, socket)
+        if value is not None:
+            self.element_type.send(value, socket)
+
+    def read_with_context(self, file_object, context):
+        if Boolean.read(file_object):
+            return self.element_type.read_with_context(file_object, context)
+
+    def send_with_context(self, value, socket, context):
+        Boolean.send(value is not None, socket)
+        if value is not None:
+            self.element_type.send_with_context(value, socket, context)

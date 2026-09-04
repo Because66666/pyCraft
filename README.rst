@@ -33,7 +33,11 @@ pyCraft is compatible with the following Minecraft releases:
 * 1.15, 1.15.1, 1.15.2
 * 1.16, 1.16.1, 1.16.2, 1.16.3, 1.16.4, 1.16.5
 * 1.17, 1.17.1
-* 1.18, 1.18.1
+* 1.18, 1.18.1, 1.18.2
+* 1.19, 1.19.1, 1.19.2, 1.19.3, 1.19.4
+* 1.20, 1.20.1, 1.20.2, 1.20.3, 1.20.4, 1.20.5, 1.20.6
+* 1.21, 1.21.1, 1.21.2, 1.21.3, 1.21.4, 1.21.5, 1.21.6, 1.21.7, 1.21.8,
+  1.21.9, 1.21.10, 1.21.11
 
 In addition, some development snapshots and pre-release versions are supported:
 `<minecraft/__init__.py>`_ contains a full list of supported Minecraft versions
@@ -44,6 +48,11 @@ Supported functionality
 Although pyCraft is compatible any supported server, only a subset of all
 packets are currently decoded or encoded by the library: those necessary
 to remain connected to the server, those used for chat, and some others.
+
+Note that pyCraft does not implement chat message signing (introduced in
+Minecraft 1.19): chat messages are always sent unsigned. This works on
+offline-mode servers and servers that do not enforce secure chat, but
+servers with ``enforce-secure-chat=true`` may reject or kick the client.
 
 Developers wishing to use other functionality with pyCraft can contribute by
 implementing packet classes for the desired packets, adding them under

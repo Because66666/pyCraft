@@ -18,6 +18,12 @@ from minecraft.networking.packets import (
     Packet, PacketBuffer, PacketListener, KeepAlivePacket, serverbound,
     clientbound
 )
+from minecraft.networking.packets.clientbound import (
+    configuration as clientbound_configuration,
+)
+from minecraft.networking.packets.serverbound import (
+    configuration as serverbound_configuration,
+)
 
 TEST_VERSIONS = list(RELEASE_PROTOCOL_VERSIONS)
 if SUPPORTED_PROTOCOL_VERSIONS[-1] not in TEST_VERSIONS:
@@ -88,6 +94,7 @@ class PacketSerializationTest(unittest.TestCase):
         for protocol_version in TEST_VERSIONS:
             logging.debug('protocol_version = %r' % protocol_version)
             context = ConnectionContext(protocol_version=protocol_version)
+            packet.context = context
 
             packet_buffer = PacketBuffer()
             packet.write(packet_buffer, compression_threshold)
@@ -154,6 +161,45 @@ class PacketEnumTest(unittest.TestCase):
             str(ExamplePacket(ConnectionContext(), alpha=0, beta=0, gamma=0)),
             '0x00 ExamplePacket(alpha=ZERO, beta=0, gamma=0)'
         )
+
+
+class PacketIdUniquenessTest(unittest.TestCase):
+    def test_unique_packet_ids(self):
+        # Each packet ID may be registered at most once per state and
+        # direction, per protocol version.
+        for protocol_version in SUPPORTED_PROTOCOL_VERSIONS:
+            if protocol_earlier(protocol_version, 758):
+                # Some collisions exist among the oldest supported
+                # protocols; only the currently maintained range is
+                # checked here.
+                continue
+            context = ConnectionContext(protocol_version=protocol_version)
+            tables = [
+                clientbound.handshake.get_packets,
+                clientbound.status.get_packets,
+                clientbound.login.get_packets,
+                clientbound.play.get_packets,
+                serverbound.handshake.get_packets,
+                serverbound.status.get_packets,
+                serverbound.login.get_packets,
+                serverbound.play.get_packets,
+            ]
+            if context.protocol_later_eq(764):
+                tables += [
+                    clientbound_configuration.get_packets,
+                    serverbound_configuration.get_packets,
+                ]
+            for get_packets in tables:
+                packet_ids = {}
+                for packet in get_packets(context):
+                    packet_id = packet.get_id(context)
+                    self.assertNotIn(
+                        packet_id, packet_ids,
+                        'Duplicate packet ID 0x%02X for %r and %r in '
+                        'protocol %d.' % (packet_id, packet,
+                                          packet_ids.get(packet_id),
+                                          protocol_version))
+                    packet_ids[packet_id] = packet
 
 
 class TestReadWritePackets(unittest.TestCase):
@@ -243,7 +289,8 @@ class TestReadWritePackets(unittest.TestCase):
 
             if context.protocol_later_eq(741):
                 packet.chunk_section_pos = Vector(167, 17, 33)
-                packet.invert_trust_edges = False
+                if context.protocol_earlier(763):
+                    packet.invert_trust_edges = False
             else:
                 packet.chunk_x, packet.chunk_z = 167, 17
                 self.assertEqual(packet.chunk_pos, (167, 17))
@@ -289,6 +336,8 @@ class TestReadWritePackets(unittest.TestCase):
                 object_uuid = 'd9568851-85bc-4a10-8d6a-261d130626fa'
                 packet.object_uuid = object_uuid
                 self.assertEqual(packet.objectUUID, object_uuid)
+            if context.protocol_later_eq(759):
+                packet.head_pitch = 0
             self.assertEqual(packet.position_and_look, pos_look)
             self.assertEqual(packet.position, pos_look.position)
             self.assertEqual(packet.velocity, velocity)
@@ -317,6 +366,8 @@ class TestReadWritePackets(unittest.TestCase):
                         entity_id=entity_id, data=1)
             if context.protocol_later_eq(49):
                 packet2.object_uuid = object_uuid
+            if context.protocol_later_eq(759):
+                packet2.head_pitch = 0
             self.assertEqual(packet.__dict__, packet2.__dict__)
 
             packet2.position = pos_look.position
@@ -344,6 +395,8 @@ class TestReadWritePackets(unittest.TestCase):
             if context.protocol_later_eq(95):
                 packet.sound_category = \
                     clientbound.play.SoundEffectPacket.SoundCategory.NEUTRAL
+            if context.protocol_later_eq(759):
+                packet.seed = 0
 
             self._test_read_write_packet(packet, context)
 

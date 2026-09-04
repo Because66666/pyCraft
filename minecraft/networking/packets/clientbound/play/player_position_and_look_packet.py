@@ -2,15 +2,24 @@ from minecraft.networking.types.basic import Boolean
 from minecraft.networking.packets import Packet
 
 from minecraft.networking.types import (
-    Double, Float, Byte, VarInt, BitFieldEnum, Vector, Direction,
-    PositionAndLook, multi_attribute_alias,
+    Double, Float, Byte, UnsignedByte, Integer, VarInt, BitFieldEnum,
+    Vector, Direction, PositionAndLook, multi_attribute_alias,
 )
 
 
 class PlayerPositionAndLookPacket(Packet, BitFieldEnum):
     @staticmethod
     def get_id(context):
-        return 0x38 if context.protocol_later_eq(755) else \
+        return 0x46 if context.protocol_later_eq(773) else \
+               0x41 if context.protocol_later_eq(770) else \
+               0x42 if context.protocol_later_eq(768) else \
+               0x40 if context.protocol_later_eq(766) else \
+               0x3E if context.protocol_later_eq(764) else \
+               0x3C if context.protocol_later_eq(762) else \
+               0x38 if context.protocol_later_eq(761) else \
+               0x39 if context.protocol_later_eq(760) else \
+               0x36 if context.protocol_later_eq(759) else \
+               0x38 if context.protocol_later_eq(755) else \
                0x34 if context.protocol_later_eq(741) else \
                0x35 if context.protocol_later_eq(721) else \
                0x36 if context.protocol_later_eq(550) else \
@@ -27,16 +36,28 @@ class PlayerPositionAndLookPacket(Packet, BitFieldEnum):
 
     packet_name = "player position and look"
     get_definition = staticmethod(lambda context: [
+        # In protocols 768 and later, the teleport ID comes first, and the
+        # position is followed by the player's velocity.
+        {'teleport_id': VarInt} if context.protocol_later_eq(768) else {},
         {'x': Double},
         {'y': Double},
         {'z': Double},
+        {'delta_x': Double} if context.protocol_later_eq(768) else {},
+        {'delta_y': Double} if context.protocol_later_eq(768) else {},
+        {'delta_z': Double} if context.protocol_later_eq(768) else {},
         {'yaw': Float},
         {'pitch': Float},
-        {'flags': Byte},
-        {'teleport_id': VarInt} if context.protocol_later_eq(107) else {},
+        {'flags':
+         Integer if context.protocol_later_eq(768) else
+         UnsignedByte if context.protocol_later_eq(766) else
+         Byte},
+        {'teleport_id': VarInt}
+        if context.protocol_in_range(107, 768) else {},
         {'dismount_vehicle': Boolean}
-        if context.protocol_later_eq(755) else {},
+        if context.protocol_in_range(755, 762) else {},
     ])
+
+    delta_x = delta_y = delta_z = 0.0
 
     # Access the 'x', 'y', 'z' fields as a Vector tuple.
     position = multi_attribute_alias(Vector, 'x', 'y', 'z')
