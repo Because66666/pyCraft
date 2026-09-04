@@ -16,6 +16,7 @@ Chat commands:
 """
 import os
 import sys
+import json
 
 # Allow running this example straight from the repository checkout.
 sys.path.insert(
@@ -79,9 +80,42 @@ def print_packet(category, packet):
     print("[%s] %s" % (category, packet))
 
 
+def component_text(value):
+    """Extracts plain text from a chat component, which arrives either as
+       a JSON string (protocols before 765) or as an NBT tag (765+)."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return value  # Already plain text.
+    if hasattr(value, 'get'):  # dict or pynbt TAG_Compound.
+        text = value.get('text', '')
+        if hasattr(text, 'value'):  # Unwrap pynbt primitive tags.
+            text = text.value
+        text = str(text)
+        extra = value.get('extra')
+        if extra:
+            text += ''.join(component_text(item) for item in extra)
+        return text
+    if hasattr(value, 'value'):  # A primitive pynbt tag, e.g. TAG_String.
+        return str(value.value)
+    return str(value)
+
+
 def print_chat(packet):
-    content = getattr(packet, "json_data", packet)
-    print("[chat] %s" % content)
+    # The readable content lives in a different field for each chat packet
+    # variant; 'json_data' exists only on the legacy (pre-1.19) packet.
+    for attribute in ('plain_message',   # PlayerChatPacket (1.19.1+)
+                      'json_data',       # ChatMessagePacket (<1.19)
+                      'signed_content',  # PlayerChatPacket (1.19)
+                      'content',         # SystemChatPacket (1.19+)
+                      'message'):        # ProfilelessChatPacket (1.19.3+)
+        content = getattr(packet, attribute, None)
+        if content is not None:
+            break
+    else:
+        content = packet
+    print("[chat] %s" % component_text(content))
 
 
 # --- login lifecycle ---

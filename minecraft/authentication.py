@@ -342,7 +342,7 @@ class MicrosoftAuthenticationToken(object):
             cache_dir = os.path.join(os.path.expanduser("~"),
                                      ".minecraft", "nmp-cache")
         if auth_title is None:
-            auth_title = Titles.MinecraftJava
+            auth_title = Titles.MinecraftNintendoSwitch
 
         options = {"flow": "live", "auth_title": auth_title,
                    "device_type": "Nintendo"}
