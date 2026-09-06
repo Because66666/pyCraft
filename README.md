@@ -15,6 +15,12 @@ Because66666 接手该项目后，通过参考开源库
 
 仓库地址：[Because66666/pyCraft](https://github.com/Because66666/pyCraft)
 
+使用
+```
+pip install pycraft-minecraft
+```
+即可安装。
+
 `start.py` 是一个使用该库的无头客户端（headless client）基础示例，使用 `start.py --help` 查看选项。
 
 详细的使用教程与示例请参见：[教程示例](TUTORIAL.md)。
