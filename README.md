@@ -25,6 +25,8 @@ pip install pycraft-minecraft
 
 详细的使用教程与示例请参见：[教程示例](TUTORIAL.md)。
 
+完整的使用示例仓库代码：[Because66666/mc_bot_5](https://github.com/Because66666/mc_bot_5)
+
 ## 支持的 Minecraft 版本
 
 pyCraft 兼容以下 Minecraft 正式版本：
