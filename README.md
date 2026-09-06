@@ -10,7 +10,10 @@ Because66666 接手该项目后，通过参考开源库
 - [PrismarineJS/minecraft-data](https://github.com/PrismarineJS/minecraft-data)
 - [PrismarineJS/node-minecraft-protocol](https://github.com/PrismarineJS/node-minecraft-protocol)
 - [PrismarineJS/prismarine-auth](https://github.com/PrismarineJS/prismarine-auth)
+
 使用Kimi-K3模型完成原代码仓库的协议升级。
+
+仓库地址：[Because66666/pyCraft](https://github.com/Because66666/pyCraft)
 
 `start.py` 是一个使用该库的无头客户端（headless client）基础示例，使用 `start.py --help` 查看选项。
 
@@ -78,6 +81,6 @@ cryptography 库的安装说明请参阅：`<https://cryptography.io/en/latest/i
 
 ### 邮件
 
-可以通过邮件联系我们：
+可以通过邮件联系：
 
 * Because66666 <z66666z@163.com>

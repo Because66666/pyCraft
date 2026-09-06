@@ -1,5 +1,9 @@
 # Created by https://www.gitignore.io
 
+# PyPI upload credentials
+pypi.ps1
+MANIFEST.in
+
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/

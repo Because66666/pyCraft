@@ -6,22 +6,23 @@ def read(filename):
     """
     Puts a file into a string.
     """
-    with open(filename, "r") as f:
+    with open(filename, "r", encoding="utf-8") as f:
         return f.read()
 
 
-MAIN_AUTHORS = ["Ammar Askar <ammar@ammaraskar.com>",
-                "Jeppe Klitgaard <jeppe@dapj.dk>"]
+# Original pyCraft authors (project is a fork of
+# https://github.com/ammaraskar/pyCraft, Apache License 2.0).
 
-URL = "https://github.com/ammaraskar/pyCraft"
+URL = "https://github.com/Because66666/pyCraft"
 
-setup(name="pyCraft",
+setup(name="pycraft-minecraft",
       version=__version__,
       description="Python MineCraft library",
-      long_description=read("README.rst"),
+      long_description=read("README.md"),
+      long_description_content_type="text/markdown",
       url=URL,
       download_url=URL + "/tarball/" + __version__,
-      author=", ".join(MAIN_AUTHORS),
+      author="Because66666",
       install_requires=["cryptography>=1.5",
                         "requests",
                         "pynbt",
@@ -35,11 +36,13 @@ setup(name="pyCraft",
                 "minecraft.networking.packets.clientbound.handshake",
                 "minecraft.networking.packets.clientbound.login",
                 "minecraft.networking.packets.clientbound.play",
+                "minecraft.networking.packets.clientbound.configuration",
                 "minecraft.networking.packets.serverbound",
                 "minecraft.networking.packets.serverbound.status",
                 "minecraft.networking.packets.serverbound.handshake",
                 "minecraft.networking.packets.serverbound.login",
                 "minecraft.networking.packets.serverbound.play",
+                "minecraft.networking.packets.serverbound.configuration",
                 "minecraft.networking.types",
                 ],
       keywords=["MineCraft", "networking", "pyCraft", "minecraftdev", "mc"],
