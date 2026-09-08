@@ -53,7 +53,8 @@ class BlockChangePacket(Packet):
 class MultiBlockChangePacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x52 if context.protocol_later_eq(773) else \
+        return 0x54 if context.protocol_later_eq(775) else \
+               0x52 if context.protocol_later_eq(773) else \
                0x4D if context.protocol_later_eq(770) else \
                0x4E if context.protocol_later_eq(768) else \
                0x49 if context.protocol_later_eq(766) else \

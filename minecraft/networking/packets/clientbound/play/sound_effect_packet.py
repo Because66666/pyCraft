@@ -11,7 +11,8 @@ __all__ = 'SoundEffectPacket', 'NamedSoundEffectPacket'
 class SoundEffectPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x73 if context.protocol_later_eq(773) else \
+        return 0x75 if context.protocol_later_eq(775) else \
+               0x73 if context.protocol_later_eq(773) else \
                0x6E if context.protocol_later_eq(770) else \
                0x6F if context.protocol_later_eq(768) else \
                0x68 if context.protocol_later_eq(766) else \

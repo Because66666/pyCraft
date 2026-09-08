@@ -11,7 +11,8 @@ from minecraft.utility import attribute_transform
 class ClientSettingsPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x0D if context.protocol_later_eq(771) else \
+        return 0x0E if context.protocol_later_eq(775) else \
+               0x0D if context.protocol_later_eq(771) else \
                0x0C if context.protocol_later_eq(768) else \
                0x0A if context.protocol_later_eq(766) else \
                0x09 if context.protocol_later_eq(764) else \

@@ -11,7 +11,7 @@ the Minecraft networking protocol (handshake, status, login, configuration,
 and play states — the configuration state exists in protocols 764+,
 i.e. Minecraft 1.20.2 and later), encryption, and Mojang/Yggdrasil
 authentication. It supports Minecraft
-releases 1.8 through 1.21.11 (plus many snapshots and some 1.7.x releases);
+releases 1.8 through 26.1.2 (plus many snapshots and some 1.7.x releases);
 the authoritative list of supported versions and protocol numbers is
 `KNOWN_MINECRAFT_VERSION_RECORDS` in `minecraft/__init__.py`.
 
@@ -152,6 +152,29 @@ one:
 - New code should use the classes under `packets.clientbound.*` /
   `packets.serverbound.*`. `packets/__init__.py` re-exports a legacy,
   oddly-named subset purely for backward compatibility — do not extend it.
+
+## Protocol upgrades
+
+When adding support for a new Minecraft protocol version:
+
+1. Add the version record(s) to `KNOWN_MINECRAFT_VERSION_RECORDS` in
+   `minecraft/__init__.py` (chronological order, correct protocol number).
+2. Diff the new protocol against the previous one (the vendored
+   `minecraft-data-master/data/pc/<version>/protocol.json` and
+   `node-minecraft-protocol-master` are the local references) and update
+   every affected packet's `get_id(context)` cascade and, where the layout
+   changed, its `get_definition(context)` / `read` / `write_fields`.
+3. Run the full test suite (`tests/test_packets.py` round-trips every
+   packet class for every supported protocol version, so ID or definition
+   mistakes at the new protocol surface there).
+4. **Sync the documentation**: update the supported-version lists in
+   `README.rst` and `README.md`, and review `TUTORIAL.md` and the scripts
+   under `examples/` — whenever the protocol change affects what they
+   describe or demonstrate (changed packet structures or fields they use,
+   new login/connection flow, new version lists), update them to match;
+   if the change does not affect them, no edit is needed.
+5. Update this `AGENTS.md` if any documented facts changed (e.g. the
+   supported-version range in "Project overview").
 
 ## Testing instructions and strategy
 

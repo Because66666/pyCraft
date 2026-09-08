@@ -179,7 +179,8 @@ class AbstractDimensionPacket(Packet):
 class JoinGamePacket(AbstractDimensionPacket):
     @staticmethod
     def get_id(context):
-        return 0x30 if context.protocol_later_eq(773) else \
+        return 0x31 if context.protocol_later_eq(775) else \
+               0x30 if context.protocol_later_eq(773) else \
                0x2B if context.protocol_later_eq(770) else \
                0x2C if context.protocol_later_eq(768) else \
                0x2B if context.protocol_later_eq(766) else \
@@ -376,7 +377,8 @@ class JoinGamePacket(AbstractDimensionPacket):
 class RespawnPacket(AbstractDimensionPacket):
     @staticmethod
     def get_id(context):
-        return 0x50 if context.protocol_later_eq(773) else \
+        return 0x52 if context.protocol_later_eq(775) else \
+               0x50 if context.protocol_later_eq(773) else \
                0x4B if context.protocol_later_eq(770) else \
                0x4C if context.protocol_later_eq(768) else \
                0x47 if context.protocol_later_eq(766) else \

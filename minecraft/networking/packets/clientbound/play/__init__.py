@@ -7,7 +7,8 @@ from minecraft.networking.types import (
     FixedPoint, Integer, Angle, UnsignedByte, Byte, Boolean, UUID, Short,
     VarInt, Double, Float, String, Enum, Difficulty, Long, Vector, Direction,
     PositionAndLook, multi_attribute_alias, attribute_transform,
-    VarIntPrefixedByteArray, PrefixedOptional, MutableRecord, NBT, LpVec3,
+    VarIntPrefixedByteArray, PrefixedOptional, PrefixedArray, MutableRecord,
+    NBT, LpVec3, Type, VarLong,
 )
 
 from .combat_event_packet import (
@@ -147,7 +148,8 @@ def get_packets(context):
 class KeepAlivePacket(AbstractKeepAlivePacket):
     @staticmethod
     def get_id(context):
-        return 0x2B if context.protocol_later_eq(773) else \
+        return 0x2C if context.protocol_later_eq(775) else \
+               0x2B if context.protocol_later_eq(773) else \
                0x26 if context.protocol_later_eq(770) else \
                0x27 if context.protocol_later_eq(768) else \
                0x26 if context.protocol_later_eq(766) else \
@@ -223,7 +225,8 @@ class SystemChatPacket(Packet):
     # Note: added in protocol 759, replacing 'ChatMessagePacket'.
     @staticmethod
     def get_id(context):
-        return 0x77 if context.protocol_later_eq(773) else \
+        return 0x79 if context.protocol_later_eq(775) else \
+               0x77 if context.protocol_later_eq(773) else \
                0x72 if context.protocol_later_eq(770) else \
                0x73 if context.protocol_later_eq(768) else \
                0x6C if context.protocol_later_eq(766) else \
@@ -252,7 +255,8 @@ class PlayerChatPacket(Packet):
     # 'global_index' field was added.
     @staticmethod
     def get_id(context):
-        return 0x3F if context.protocol_later_eq(773) else \
+        return 0x41 if context.protocol_later_eq(775) else \
+               0x3F if context.protocol_later_eq(773) else \
                0x3A if context.protocol_later_eq(770) else \
                0x3B if context.protocol_later_eq(768) else \
                0x39 if context.protocol_later_eq(767) else \
@@ -547,7 +551,8 @@ class SpawnPlayerPacket(Packet):
 class EntityVelocityPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x63 if context.protocol_later_eq(773) else \
+        return 0x65 if context.protocol_later_eq(775) else \
+               0x63 if context.protocol_later_eq(773) else \
                0x5E if context.protocol_later_eq(770) else \
                0x5F if context.protocol_later_eq(768) else \
                0x5A if context.protocol_later_eq(766) else \
@@ -588,7 +593,8 @@ class EntityVelocityPacket(Packet):
 class EntityPositionDeltaPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x33 if context.protocol_later_eq(773) else \
+        return 0x35 if context.protocol_later_eq(775) else \
+               0x33 if context.protocol_later_eq(773) else \
                0x2E if context.protocol_later_eq(770) else \
                0x2F if context.protocol_later_eq(768) else \
                0x2E if context.protocol_later_eq(766) else \
@@ -637,7 +643,8 @@ class EntityPositionDeltaPacket(Packet):
 class TimeUpdatePacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x6F if context.protocol_later_eq(773) else \
+        return 0x71 if context.protocol_later_eq(775) else \
+               0x6F if context.protocol_later_eq(773) else \
                0x6A if context.protocol_later_eq(770) else \
                0x6B if context.protocol_later_eq(768) else \
                0x64 if context.protocol_later_eq(766) else \
@@ -660,21 +667,56 @@ class TimeUpdatePacket(Packet):
                0x03
 
     packet_name = "time update"
-    get_definition = staticmethod(lambda context: [
-        {'world_age': Long},
-        {'time_of_day': Long},
-        {'tick_day_time': Boolean}
-        if context.protocol_later_eq(768) else {},
-    ])
 
-    # The 'tick_day_time' field was added in protocol 768.
+    class ClockUpdate(MutableRecord, Type):
+        # An entry of the 'clock_updates' array in protocols 775 and later.
+        __slots__ = 'id', 'total_ticks', 'partial_tick', 'rate'
+
+        @classmethod
+        def read_with_context(cls, file_object, context):
+            return cls(id=VarInt.read(file_object),
+                       total_ticks=VarLong.read(file_object),
+                       partial_tick=Float.read(file_object),
+                       rate=Float.read(file_object))
+
+        @classmethod
+        def send_with_context(cls, record, socket, context):
+            VarInt.send(record.id, socket)
+            VarLong.send(record.total_ticks, socket)
+            Float.send(record.partial_tick, socket)
+            Float.send(record.rate, socket)
+
+    @staticmethod
+    def get_definition(context):
+        if context.protocol_later_eq(775):
+            # In protocol 775, the packet was redesigned to support
+            # multiple world clocks; 'time_of_day' and 'tick_day_time' are
+            # replaced by the 'clock_updates' array.
+            return [
+                {'world_age': Long},
+                {'clock_updates':
+                 PrefixedArray(VarInt, TimeUpdatePacket.ClockUpdate)},
+            ]
+        return [
+            {'world_age': Long},
+            {'time_of_day': Long},
+            {'tick_day_time': Boolean}
+            if context.protocol_later_eq(768) else {},
+        ]
+
+    # The 'tick_day_time' field was added in protocol 768 and removed in
+    # protocol 775.
     tick_day_time = True
+
+    # The 'clock_updates' field was added in protocol 775.
+    clock_updates = []
 
 
 class UpdateHealthPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x66 if context.protocol_later_eq(773) else \
+        return 0x68 if context.protocol_later_eq(775) else \
+               0x66 if context.protocol_later_eq(773) else \
                0x61 if context.protocol_later_eq(770) else \
                0x62 if context.protocol_later_eq(768) else \
                0x5D if context.protocol_later_eq(766) else \
@@ -733,7 +775,8 @@ class PluginMessagePacket(AbstractPluginMessagePacket):
 class PlayerListHeaderAndFooterPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x78 if context.protocol_later_eq(773) else \
+        return 0x7A if context.protocol_later_eq(775) else \
+               0x78 if context.protocol_later_eq(773) else \
                0x73 if context.protocol_later_eq(770) else \
                0x74 if context.protocol_later_eq(768) else \
                0x6D if context.protocol_later_eq(766) else \
@@ -770,7 +813,8 @@ class PlayerListHeaderAndFooterPacket(Packet):
 class EntityLookPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x36 if context.protocol_later_eq(773) else \
+        return 0x38 if context.protocol_later_eq(775) else \
+               0x36 if context.protocol_later_eq(773) else \
                0x31 if context.protocol_later_eq(770) else \
                0x32 if context.protocol_later_eq(768) else \
                0x30 if context.protocol_later_eq(766) else \
@@ -803,7 +847,8 @@ class ResourcePackSendPacket(Packet):
     # Note: this packet was replaced by 'add resource pack' in protocol 765.
     @staticmethod
     def get_id(context):
-        return 0x42 if context.protocol_later_eq(764) else \
+        return 0x51 if context.protocol_later_eq(775) else \
+               0x42 if context.protocol_later_eq(764) else \
                0x40 if context.protocol_later_eq(762) else \
                0x3C if context.protocol_later_eq(761) else \
                0x3D if context.protocol_later_eq(760) else \
@@ -843,7 +888,8 @@ class StartConfigurationPacket(Packet):
     # to the configuration state.
     @staticmethod
     def get_id(context):
-        return 0x74 if context.protocol_later_eq(773) else \
+        return 0x76 if context.protocol_later_eq(775) else \
+               0x74 if context.protocol_later_eq(773) else \
                0x6F if context.protocol_later_eq(770) else \
                0x70 if context.protocol_later_eq(768) else \
                0x69 if context.protocol_later_eq(766) else \

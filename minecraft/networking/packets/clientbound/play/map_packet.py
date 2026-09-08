@@ -12,7 +12,8 @@ class MapPacket(Packet):
     # this packet is not registered for protocols 765 and later.
     @staticmethod
     def get_id(context):
-        return 0x2A if context.protocol_later_eq(764) else \
+        return 0x33 if context.protocol_later_eq(775) else \
+               0x2A if context.protocol_later_eq(764) else \
                0x29 if context.protocol_later_eq(762) else \
                0x25 if context.protocol_later_eq(761) else \
                0x26 if context.protocol_later_eq(760) else \

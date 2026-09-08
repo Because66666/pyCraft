@@ -147,7 +147,8 @@ class SpecialisedCombatEventPacket(CombatEventPacket):
 class EnterCombatEventPacket(SpecialisedCombatEventPacket):
     @staticmethod
     def get_id(context):
-        return 0x41 if context.protocol_later_eq(773) else \
+        return 0x43 if context.protocol_later_eq(775) else \
+               0x41 if context.protocol_later_eq(773) else \
                0x3C if context.protocol_later_eq(770) else \
                0x3D if context.protocol_later_eq(768) else \
                0x3B if context.protocol_later_eq(766) else \
@@ -166,7 +167,8 @@ class EnterCombatEventPacket(SpecialisedCombatEventPacket):
 class EndCombatEventPacket(SpecialisedCombatEventPacket):
     @staticmethod
     def get_id(context):
-        return 0x40 if context.protocol_later_eq(773) else \
+        return 0x42 if context.protocol_later_eq(775) else \
+               0x40 if context.protocol_later_eq(773) else \
                0x3B if context.protocol_later_eq(770) else \
                0x3C if context.protocol_later_eq(768) else \
                0x3A if context.protocol_later_eq(766) else \
@@ -191,7 +193,8 @@ class EndCombatEventPacket(SpecialisedCombatEventPacket):
 class DeathCombatEventPacket(SpecialisedCombatEventPacket):
     @staticmethod
     def get_id(context):
-        return 0x42 if context.protocol_later_eq(773) else \
+        return 0x44 if context.protocol_later_eq(775) else \
+               0x42 if context.protocol_later_eq(773) else \
                0x3D if context.protocol_later_eq(770) else \
                0x3E if context.protocol_later_eq(768) else \
                0x3C if context.protocol_later_eq(766) else \

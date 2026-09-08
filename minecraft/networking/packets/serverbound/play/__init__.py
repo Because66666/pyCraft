@@ -51,7 +51,8 @@ def get_packets(context):
 class KeepAlivePacket(AbstractKeepAlivePacket):
     @staticmethod
     def get_id(context):
-        return 0x1B if context.protocol_later_eq(771) else \
+        return 0x1C if context.protocol_later_eq(775) else \
+               0x1B if context.protocol_later_eq(771) else \
                0x1A if context.protocol_later_eq(768) else \
                0x18 if context.protocol_later_eq(766) else \
                0x15 if context.protocol_later_eq(765) else \
@@ -77,7 +78,8 @@ class KeepAlivePacket(AbstractKeepAlivePacket):
 class ChatPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x08 if context.protocol_later_eq(771) else \
+        return 0x09 if context.protocol_later_eq(775) else \
+               0x08 if context.protocol_later_eq(771) else \
                0x07 if context.protocol_later_eq(768) else \
                0x06 if context.protocol_later_eq(766) else \
                0x05 if context.protocol_later_eq(760) else \
@@ -198,7 +200,8 @@ class PlayerSessionPacket(Packet):
     # available (see 'minecraft.networking.chat_signing').
     @staticmethod
     def get_id(context):
-        return 0x09 if context.protocol_later_eq(771) else \
+        return 0x0A if context.protocol_later_eq(775) else \
+               0x09 if context.protocol_later_eq(771) else \
                0x08 if context.protocol_later_eq(768) else \
                0x07 if context.protocol_later_eq(766) else \
                0x06 if context.protocol_later_eq(762) else \
@@ -217,7 +220,8 @@ class ChatAcknowledgementPacket(Packet):
     # messages without sending a chat message.
     @staticmethod
     def get_id(context):
-        return 0x05 if context.protocol_later_eq(771) else \
+        return 0x06 if context.protocol_later_eq(775) else \
+               0x05 if context.protocol_later_eq(771) else \
                0x04 if context.protocol_later_eq(768) else \
                0x03
 
@@ -235,7 +239,8 @@ class ChatCommandPacket(Packet):
     # commands like '/msg' are simply not marked as signed.
     @staticmethod
     def get_id(context):
-        return 0x06 if context.protocol_later_eq(771) else \
+        return 0x07 if context.protocol_later_eq(775) else \
+               0x06 if context.protocol_later_eq(771) else \
                0x05 if context.protocol_later_eq(768) else \
                0x04 if context.protocol_later_eq(760) else \
                0x03
@@ -340,7 +345,8 @@ class ConfigurationAcknowledgedPacket(Packet):
     # 'start configuration' packet.
     @staticmethod
     def get_id(context):
-        return 0x0F if context.protocol_later_eq(771) else \
+        return 0x10 if context.protocol_later_eq(775) else \
+               0x0F if context.protocol_later_eq(771) else \
                0x0E if context.protocol_later_eq(768) else \
                0x0C if context.protocol_later_eq(766) else \
                0x0B
@@ -352,7 +358,8 @@ class ConfigurationAcknowledgedPacket(Packet):
 class PositionAndLookPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x1E if context.protocol_later_eq(771) else \
+        return 0x1F if context.protocol_later_eq(775) else \
+               0x1E if context.protocol_later_eq(771) else \
                0x1D if context.protocol_later_eq(768) else \
                0x1B if context.protocol_later_eq(766) else \
                0x18 if context.protocol_later_eq(765) else \
@@ -409,7 +416,8 @@ class TeleportConfirmPacket(Packet):
 class AnimationPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x3C if context.protocol_later_eq(771) else \
+        return 0x3F if context.protocol_later_eq(775) else \
+               0x3C if context.protocol_later_eq(771) else \
                0x3B if context.protocol_later_eq(770) else \
                0x3A if context.protocol_later_eq(769) else \
                0x38 if context.protocol_later_eq(768) else \
@@ -443,7 +451,8 @@ class AnimationPacket(Packet):
 class ClientStatusPacket(Packet, Enum):
     @staticmethod
     def get_id(context):
-        return 0x0B if context.protocol_later_eq(771) else \
+        return 0x0C if context.protocol_later_eq(775) else \
+               0x0B if context.protocol_later_eq(771) else \
                0x0A if context.protocol_later_eq(768) else \
                0x09 if context.protocol_later_eq(766) else \
                0x08 if context.protocol_later_eq(764) else \
@@ -477,7 +486,8 @@ class ClientStatusPacket(Packet, Enum):
 class PluginMessagePacket(AbstractPluginMessagePacket):
     @staticmethod
     def get_id(context):
-        return 0x15 if context.protocol_later_eq(771) else \
+        return 0x16 if context.protocol_later_eq(775) else \
+               0x15 if context.protocol_later_eq(771) else \
                0x14 if context.protocol_later_eq(768) else \
                0x12 if context.protocol_later_eq(766) else \
                0x10 if context.protocol_later_eq(765) else \
@@ -513,7 +523,8 @@ class PlayerBlockPlacementPacket(Packet):
 
     @staticmethod
     def get_id(context):
-        return 0x3F if context.protocol_later_eq(771) else \
+        return 0x42 if context.protocol_later_eq(775) else \
+               0x3F if context.protocol_later_eq(771) else \
                0x3E if context.protocol_later_eq(770) else \
                0x3C if context.protocol_later_eq(769) else \
                0x3A if context.protocol_later_eq(768) else \
@@ -562,7 +573,8 @@ class PlayerBlockPlacementPacket(Packet):
 class UseItemPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x40 if context.protocol_later_eq(771) else \
+        return 0x43 if context.protocol_later_eq(775) else \
+               0x40 if context.protocol_later_eq(771) else \
                0x3F if context.protocol_later_eq(770) else \
                0x3D if context.protocol_later_eq(769) else \
                0x3B if context.protocol_later_eq(768) else \

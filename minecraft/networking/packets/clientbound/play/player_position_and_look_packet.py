@@ -10,7 +10,8 @@ from minecraft.networking.types import (
 class PlayerPositionAndLookPacket(Packet, BitFieldEnum):
     @staticmethod
     def get_id(context):
-        return 0x46 if context.protocol_later_eq(773) else \
+        return 0x48 if context.protocol_later_eq(775) else \
+               0x46 if context.protocol_later_eq(773) else \
                0x41 if context.protocol_later_eq(770) else \
                0x42 if context.protocol_later_eq(768) else \
                0x40 if context.protocol_later_eq(766) else \

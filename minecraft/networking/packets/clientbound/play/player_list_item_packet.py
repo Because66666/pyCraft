@@ -10,7 +10,8 @@ from minecraft.networking.types import (
 class PlayerListItemPacket(Packet):
     @staticmethod
     def get_id(context):
-        return 0x44 if context.protocol_later_eq(773) else \
+        return 0x46 if context.protocol_later_eq(775) else \
+               0x44 if context.protocol_later_eq(773) else \
                0x3F if context.protocol_later_eq(770) else \
                0x40 if context.protocol_later_eq(768) else \
                0x3E if context.protocol_later_eq(766) else \
@@ -489,7 +490,8 @@ class PlayerRemovePacket(Packet):
         (PlayerListItemPacket) packet in protocol 764. """
     @staticmethod
     def get_id(context):
-        return 0x43 if context.protocol_later_eq(773) else \
+        return 0x45 if context.protocol_later_eq(775) else \
+               0x43 if context.protocol_later_eq(773) else \
                0x3E if context.protocol_later_eq(770) else \
                0x3F if context.protocol_later_eq(768) else \
                0x3D if context.protocol_later_eq(766) else \
